@@ -1,12 +1,14 @@
 from flask import request, jsonify, session, send_file
 from core.global_params import flask_app, sql
 
+from utils.login import *
+
 @flask_app.route('/user/info/get', methods=['GET'])
 async def get_user_info():
     """
     获取当前登录用户的信息
     """
-    uid = session.get('uid')
+    uid = get_user_id(session, request)
     if not uid:
         return jsonify(success=False, error="用户未登录")
 
@@ -21,7 +23,7 @@ async def get_user_avatar():
     """
     获取当前登录用户的头像
     """
-    uid = session.get('uid')
+    uid = get_user_id(session, request)
     if not uid:
         # 如果用户未登录，可以返回一个默认头像
         try:
@@ -50,7 +52,7 @@ async def update_user_info():
     """
     更新当前登录用户的信息
     """
-    uid = session.get('uid')
+    uid = get_user_id(session, request)
     if not uid:
         return jsonify(success=False, error="用户未登录")
 

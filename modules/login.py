@@ -9,6 +9,9 @@ from flask import request, jsonify, session, redirect
 
 from core.global_params import flask_app, oauth_config, sql, redis_pool
 
+from utils.login import *
+
+
 @flask_app.route('/login/redirect/set', methods=['POST'])
 async def on_login_redirect_set():
     session['login_redirect'] = request.json.get('redirect_url')
@@ -80,12 +83,15 @@ async def on_qq_callback():
     await handle_avatar(uid, user_info['figureurl_qq_1'])
 
     # Store user info in session
-    session['uid'] = uid
+    session['session_id'] = create_session(uid)
 
     # Redirect to the original page
     redirect_url = session.get('login_redirect', '/')
     session.pop('login_redirect', None)
-    return redirect(redirect_url)
+    
+    response = redirect(redirect_url)
+    response.set_cookie('session_id', session['session_id'], max_age=login_expire, httponly=True, secure=request.is_secure)
+    return response
 
 
 @flask_app.route('/oauth/weixin/callback', methods=['GET'])
@@ -135,17 +141,22 @@ async def on_weixin_callback():
     await handle_avatar(uid, user_info['headimgurl'])
 
     # Store user info in session
-    session['uid'] = uid
+    session['session_id'] = create_session(uid)
 
     # Redirect to the original page
     redirect_url = session.get('login_redirect', '/')
     session.pop('login_redirect', None)
-    return redirect(redirect_url)
+    
+    response = redirect(redirect_url)
+    response.set_cookie('session_id', session['session_id'], max_age=login_expire, httponly=True, secure=request.is_secure)
+    return response
 
 @flask_app.route('/logout', methods=['POST'])
 async def on_logout():
-    session.pop('uid', None)
+    pop_session(session.get('session_id'))
+    session.pop('session_id', None)
     session.pop('login_redirect', None)
+    request.cookies.pop('session_id', None)
     return jsonify(success=True, message="用户已登出")
 
 @flask_app.route('/login/mail', methods=['POST'])
