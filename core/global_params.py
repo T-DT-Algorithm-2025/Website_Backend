@@ -3,6 +3,7 @@ import json
 import asyncio
 from flask import Flask
 import flask_cors
+import redis
 
 # Global parameters
 database_config = json.load(open('config/database.json'))
@@ -11,8 +12,12 @@ global_config = json.load(open('config/config.json'))
 
 mail_config = json.load(open('config/mail.json'))
 
-sql = utils.SQL(database_config['sql_host'], database_config['sql_port'],
-                database_config['sql_database_name'], database_config['sql_database_user'], database_config['sql_database_passwd'])
+oauth_config = json.load(open('config/oauth.json'))
+
+sql = utils.SQL(database_config['sql']['sql_host'], database_config['sql']['sql_port'],
+                database_config['sql']['sql_database_name'], database_config['sql']['sql_database_user'], database_config['sql']['sql_database_passwd'])
+
+redis_pool = redis.ConnectionPool(host=database_config['redis']['redis_host'], port=database_config['redis']['redis_port'], db=database_config['redis']['redis_db'])
 
 mailer = utils.Mail(mail_config['host'], mail_config['port'],
                     mail_config['user'], mail_config['passwd'])

@@ -1,7 +1,14 @@
 {
-    "sql_host": "localhost",
-    "sql_port": 3306,
-    "sql_database_name": "",
-    "sql_database_user": "",
-    "sql_database_passwd": ""
+    "sql": {
+        "sql_host": "localhost",
+        "sql_port": 3306,
+        "sql_database_name": "",
+        "sql_database_user": "",
+        "sql_database_passwd": ""
+    },
+    "redis": {
+        "redis_host": "localhost",
+        "redis_port": 6379,
+        "redis_db": 0
+    }
 }
