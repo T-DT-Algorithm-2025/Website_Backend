@@ -11,6 +11,19 @@ from core.global_params import flask_app, oauth_config, sql, redis_pool
 
 from utils.login import *
 
+def safe_redirect(url):
+    """Safely redirects to a given URL."""
+    if not url:
+        return redirect('/')
+    # 检查是否为同一一级域名
+    host_url_father = request.host_url.split('//')[1].split('/')[0].split('.')[-2:]
+    url_father = url.split('//')[1].split('/')[0].split('.')[-2:]
+    if host_url_father != url_father:
+        return redirect('/')
+    # 检查协议是否安全
+    if request.scheme != 'http' and request.scheme != 'https':
+        return redirect('/')
+    return redirect(url)
 
 @flask_app.route('/login/redirect/set', methods=['POST'])
 async def on_login_redirect_set():
@@ -89,7 +102,7 @@ async def on_qq_callback():
     redirect_url = session.get('login_redirect', '/')
     session.pop('login_redirect', None)
     
-    response = redirect(redirect_url)
+    response = safe_redirect(redirect_url)
     response.set_cookie('session_id', session['session_id'], max_age=login_expire, httponly=True, secure=request.is_secure)
     return response
 
@@ -147,7 +160,7 @@ async def on_weixin_callback():
     redirect_url = session.get('login_redirect', '/')
     session.pop('login_redirect', None)
     
-    response = redirect(redirect_url)
+    response = safe_redirect(redirect_url)
     response.set_cookie('session_id', session['session_id'], max_age=login_expire, httponly=True, secure=request.is_secure)
     return response
 
