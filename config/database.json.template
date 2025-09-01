@@ -1,0 +1,7 @@
+{
+    "sql_host": "localhost",
+    "sql_port": 3306,
+    "sql_database_name": "",
+    "sql_database_user": "",
+    "sql_database_passwd": ""
+}
