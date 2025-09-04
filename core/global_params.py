@@ -5,7 +5,6 @@ from flask import Flask
 import flask_cors
 import redis
 from datetime import timedelta
-from utils.login import login_expire as login_expire_seconds
 
 
 # Global parameters
@@ -35,7 +34,7 @@ mailer = utils.Mail(mail_config['host'], mail_config['port'],
 flask_app = Flask(__name__)
 flask_app.debug = False
 flask_app.config['SECRET_KEY'] = global_config['secret_key']
-flask_app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(seconds=login_expire_seconds)
+flask_app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=global_config.get('login_expire_days', 7))
 flask_cors.CORS(flask_app)
 
 async def check_data_base():

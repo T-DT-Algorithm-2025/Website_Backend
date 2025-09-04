@@ -24,8 +24,8 @@ def safe_redirect(url):
     # 检查是否为同一一级域名
     host_url_father = request.host_url.split('//')[1].split('/')[0].split('.')[-2:]
     url_father = url.split('//')[1].split('/')[0].split('.')[-2:]
-    if host_url_father != url_father:
-        return '/'
+    # if host_url_father != url_father:
+    #     return '/'
     # 检查协议是否安全
     if request.scheme != 'http' and request.scheme != 'https':
         return '/'
@@ -33,6 +33,7 @@ def safe_redirect(url):
 
 @flask_app.route('/login/redirect/set', methods=['POST'])
 async def on_login_redirect_set():
+    session.permanent = True
     session['login_redirect'] = request.json.get('redirect_url')
     return jsonify(success=True)
 
@@ -104,8 +105,8 @@ async def on_qq_callback():
     await handle_avatar(uid, user_info['figureurl_qq'])
 
     # Store user info in session
-    session['uid'] = uid
     session.permanent = True
+    session['uid'] = uid
 
     # Redirect to the original page
     redirect_url = session.get('login_redirect', '/')
@@ -163,8 +164,8 @@ async def on_weixin_callback():
     await handle_avatar(uid, user_info['headimgurl'])
 
     # Store user info in session
-    session['uid'] = uid
     session.permanent = True
+    session['uid'] = uid
 
     # Redirect to the original page
     redirect_url = session.get('login_redirect', '/')
