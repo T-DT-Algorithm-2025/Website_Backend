@@ -4,6 +4,9 @@ import asyncio
 from flask import Flask
 import flask_cors
 import redis
+from datetime import timedelta
+from utils.login import login_expire as login_expire_seconds
+
 
 # Global parameters
 database_config = json.load(open('config/database.json'))
@@ -14,16 +17,25 @@ mail_config = json.load(open('config/mail.json'))
 
 oauth_config = json.load(open('config/oauth.json'))
 
-sql = utils.SQL(database_config['sql']['sql_host'], database_config['sql']['sql_port'],
-                database_config['sql']['sql_database_name'], database_config['sql']['sql_database_user'], database_config['sql']['sql_database_passwd'])
+db_config = {
+    'host': database_config['sql']['sql_host'],
+    'port': database_config['sql']['sql_port'],
+    'user': database_config['sql']['sql_database_user'],
+    'password': database_config['sql']['sql_database_passwd'],
+    'db': database_config['sql']['sql_database_name'],
+    'charset': 'utf8mb4'
+}
+utils.DatabaseManager.initialize_pool(**db_config)
 
-redis_pool = redis.ConnectionPool(host=database_config['redis']['redis_host'], port=database_config['redis']['redis_port'], db=database_config['redis']['redis_db'])
+redis_client = utils.RedisClient(host=database_config['redis']['redis_host'], port=database_config['redis']['redis_port'], db=database_config['redis']['redis_db'], password=database_config['redis']['redis_password'])
 
 mailer = utils.Mail(mail_config['host'], mail_config['port'],
                     mail_config['user'], mail_config['passwd'])
 
 flask_app = Flask(__name__)
 flask_app.debug = False
+flask_app.config['SECRET_KEY'] = global_config['secret_key']
+flask_app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(seconds=login_expire_seconds)
 flask_cors.CORS(flask_app)
 
 async def check_data_base():
@@ -37,9 +49,10 @@ async def check_data_base():
         #            "name char(9)", "department char(20)", "path char(64)", "mail char(255)")
     }
     for table in sql_tables:
-        form = await sql.select_one('information_schema.TABLES', 'TABLE_NAME', table)
-        if (len(form) == 0):
-            await sql.create_table(table, sql_params[table])
+        with utils.SQL() as sql:
+            form = sql.fetch_one('information_schema.TABLES', {'TABLE_NAME': table})
+            if not form:
+                sql.execute_query(f"CREATE TABLE `{table}` ({', '.join(sql_params[table])})")
 
 loop = asyncio.get_event_loop()
 if loop.is_running():

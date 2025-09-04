@@ -1,0 +1,4 @@
+{
+    "flask_port": 5000,
+    "secret_key": "your_secret_key"
+}

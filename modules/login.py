@@ -4,26 +4,32 @@ import math
 from datetime import datetime
 import aiohttp
 import uuid
+import logging
 
 from flask import request, jsonify, session, redirect
 
-from core.global_params import flask_app, oauth_config, sql, redis_pool
+from core.global_params import flask_app, oauth_config, redis_client
 
 from utils.login import *
+from utils import SQL
+
+logger = logging.getLogger(__name__)
 
 def safe_redirect(url):
     """Safely redirects to a given URL."""
     if not url:
-        return redirect('/')
+        return '/'
+    if url.startswith('/') and not url.startswith('//'):
+        return url
     # 检查是否为同一一级域名
     host_url_father = request.host_url.split('//')[1].split('/')[0].split('.')[-2:]
     url_father = url.split('//')[1].split('/')[0].split('.')[-2:]
     if host_url_father != url_father:
-        return redirect('/')
+        return '/'
     # 检查协议是否安全
     if request.scheme != 'http' and request.scheme != 'https':
-        return redirect('/')
-    return redirect(url)
+        return '/'
+    return url
 
 @flask_app.route('/login/redirect/set', methods=['POST'])
 async def on_login_redirect_set():
@@ -42,7 +48,8 @@ async def handle_avatar(uid, avatar_url):
             if response.status == 200:
                 with open(avatar_path, 'wb') as f:
                     f.write(await response.read())
-                await sql.update_one('useravatar', 'uid', uid, 'avatar_path', f"'{avatar_path}'")
+                with SQL() as sql:
+                    sql.update('useravatar', {'avatar_path': avatar_path}, {'uid': uid})
 
 @flask_app.route('/oauth/qq/callback', methods=['GET'])
 async def on_qq_callback():
@@ -79,31 +86,32 @@ async def on_qq_callback():
             user_info = await response.json()
 
     # Check if user exists
-    user = await sql.select_one('user', 'openid_qq', openid)
-    if not user:
-        # Create new user
-        uid = str(uuid.uuid4())
-        await sql.insert_one('user', (uid, openid, None, None, None))
-        await sql.insert_one('userinfo', (uid, user_info['nickname'], user_info['gender'], None, None, None, None, None, None))
-        await sql.insert_one('useravatar', (uid, ''))
-    else:
-        uid = user[0]['uid']
+    with SQL() as sql:
+        user = sql.fetch_one('user', {'openid_qq': openid})
+        if not user:
+            # Create new user
+            uid = str(uuid.uuid4())
+            sql.insert('user', {'uid': uid, 'openid_qq': openid})
+            sql.insert('userinfo', {'uid': uid, 'nickname': user_info['nickname'], 'gender': user_info['gender']})
+            sql.insert('useravatar', {'uid': uid, 'avatar_path': ''})
+        else:
+            uid = user['uid']
 
     # Store access_token in Redis
-    redis_pool.set(f'access_token_qq:{uid}', access_token)
+    redis_client.set(f'access_token_qq:{uid}', access_token)
 
     # Handle avatar
-    await handle_avatar(uid, user_info['figureurl_qq_1'])
+    await handle_avatar(uid, user_info['figureurl_qq'])
 
     # Store user info in session
-    session['session_id'] = create_session(uid)
+    session['uid'] = uid
+    session.permanent = True
 
     # Redirect to the original page
     redirect_url = session.get('login_redirect', '/')
     session.pop('login_redirect', None)
-    
-    response = safe_redirect(redirect_url)
-    response.set_cookie('session_id', session['session_id'], max_age=login_expire, httponly=True, secure=request.is_secure)
+
+    response = redirect(safe_redirect(redirect_url))
     return response
 
 
@@ -137,40 +145,46 @@ async def on_weixin_callback():
             user_info = await response.json(content_type='text/plain; charset=utf-8')
 
     # Check if user exists
-    user = await sql.select_one('user', 'openid_wx', openid)
-    if not user:
-        # Create new user
-        uid = str(uuid.uuid4())
-        await sql.insert_one('user', (uid, None, openid, None, None))
-        await sql.insert_one('userinfo', (uid, user_info['nickname'], user_info.get('sex'), None, None, None, None, None, None))
-        await sql.insert_one('useravatar', (uid, ''))
-    else:
-        uid = user[0]['uid']
+    with SQL() as sql:
+        user = sql.fetch_one('user', {'openid_wx': openid})
+        if not user:
+            # Create new user
+            uid = str(uuid.uuid4())
+            sql.insert('user', {'uid': uid, 'openid_wx': openid})
+            sql.insert('userinfo', {'uid': uid, 'nickname': user_info['nickname'], 'gender': user_info.get('sex')})
+            sql.insert('useravatar', {'uid': uid, 'avatar_path': ''})
+        else:
+            uid = user['uid']
 
     # Store access_token in Redis
-    redis_pool.set(f'access_token_wx:{uid}', access_token)
+    redis_client.set(f'access_token_wx:{uid}', access_token)
 
     # Handle avatar
     await handle_avatar(uid, user_info['headimgurl'])
 
     # Store user info in session
-    session['session_id'] = create_session(uid)
+    session['uid'] = uid
+    session.permanent = True
 
     # Redirect to the original page
     redirect_url = session.get('login_redirect', '/')
     session.pop('login_redirect', None)
     
-    response = safe_redirect(redirect_url)
-    response.set_cookie('session_id', session['session_id'], max_age=login_expire, httponly=True, secure=request.is_secure)
+    response = redirect(safe_redirect(redirect_url))
     return response
 
-@flask_app.route('/logout', methods=['POST'])
+@flask_app.route('/logout', methods=['POST', 'GET'])
 async def on_logout():
-    pop_session(session.get('session_id'))
-    session.pop('session_id', None)
-    session.pop('login_redirect', None)
-    request.cookies.pop('session_id', None)
-    return jsonify(success=True, message="用户已登出")
+    success = False
+    if 'uid' in session:
+        session.pop('uid', None)
+        success = True
+        if 'login_redirect' in session:
+            session.pop('login_redirect', None)
+    response = jsonify(success=True, message="用户已登出")
+    if not success:
+        response = jsonify(success=False, message="用户未登录")
+    return response
 
 @flask_app.route('/login/mail', methods=['POST'])
 async def on_mail_login():

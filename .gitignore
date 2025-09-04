@@ -210,6 +210,7 @@ __marimo__/
 .vscode/
 
 # Secure
+config/config.json
 config/database.json
 config/mail.json
 config/oauth.json
