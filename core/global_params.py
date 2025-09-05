@@ -38,12 +38,13 @@ flask_app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=global_config.ge
 flask_cors.CORS(flask_app)
 
 async def check_data_base():
-    sql_tables = ['user', 'userinfo', 'useravatar']
+    sql_tables = ['user', 'userinfo', 'useravatar', 'userpermission']
     sql_params = {
         "user": ("uid char(20) primary key", "openid_qq char(64)", "openid_wx char(64)", "mail char(255)", "pwd char(64)"),
         "userinfo": ("uid char(20) primary key", "nickname char(64)", "gender char(10)", "realname char(64)", 
                      "student_id char(20)", "department char(64)", "major char(64)", "grade char(10)", "rank char(10)"),
-        "useravatar": ("uid char(20) primary key", "avatar_path char(255)")
+        "useravatar": ("uid char(20) primary key", "avatar_path char(255)"),
+        "userpermission": ("uid char(20) primary key", "is_main_leader_admin bool", "is_group_leader_admin bool", "is_member_admin bool", "is_banned bool", "ban_reason char(255)")
         # "resume": ("submit_id char(20) primary key", "student_id char(20)",
         #            "name char(9)", "department char(20)", "path char(64)", "mail char(255)")
     }

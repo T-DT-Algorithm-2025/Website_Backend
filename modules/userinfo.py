@@ -18,8 +18,15 @@ async def get_user_info():
         return jsonify(success=False, error="用户未登录")
     with SQL() as sql:
         user_info = sql.fetch_one('userinfo', {'uid': uid})
+        permission = False
+        permission_info = sql.fetch_one('userpermission', {'uid': uid})
+        if permission_info:
+            if permission_info.get('is_main_leader_admin') or permission_info.get('is_group_leader_admin') or permission_info.get('is_member_admin'):
+                permission = True
+    
     if user_info:
-        return jsonify(success=True, data=user_info)
+        user_info['permission'] = permission
+        return jsonify(success=True, data=user_info, permission=permission)
     else:
         return jsonify(success=False, error="未找到用户信息")
 
