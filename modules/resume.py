@@ -181,9 +181,13 @@ async def list_user_resumes():
         logger.error(f"Error listing user resumes: {e}")
         return jsonify(success=False, error="获取简历列表时发生错误"), 500
 
-# 其他接口（下载、删除等）保持类似逻辑，此处省略重复代码，但已在内部修复
-# ... (download, get_additional_file_name, get_real_head_img, get_available_positions)
-# 以下为修复后的其他函数
+@flask_app.route('/recruit/positions', methods=['GET'])
+async def get_available_positions():
+    """
+    获取可申请的职位列表
+    """
+    return jsonify(success=True, positions=available_positions, second_stage_positions=available_2st_positions)
+
 @flask_app.route('/resume/download/<submit_id>', methods=['GET'])
 async def download_additional_file(submit_id):
     uid = session.get('uid')
@@ -231,26 +235,130 @@ async def update_resume(submit_id):
     data = request.form
     update_time = datetime.datetime.now()
     
-    first_choice = data.get('first_choice', '')
-    # ... (与 apply 接口类似的验证逻辑)
-    
-    update_data = {
-        'first_choice': first_choice,
-        'second_choice': data.get('second_choice', ''),
-        # ... 其他字段
-    }
-
-    # 处理文件更新逻辑
-    if data.get('additional_file_change', 'false').lower() == 'true':
-        # ... (文件保存逻辑)
-        # update_data['additional_file_path'] = new_path
-        pass
-
+    first_choice = data.get('1st_choice', '')
+    if not first_choice:
+        return jsonify(success=False, error="必须提供第一志愿")
+    if first_choice not in available_positions:
+        return jsonify(success=False, error="第一志愿选择无效")
+    second_choice = data.get('2nd_choice', '')
+    if second_choice and second_choice not in available_2st_positions:
+        return jsonify(success=False, error="第二志愿选择无效")
+    if first_choice == second_choice and second_choice != '':
+        return jsonify(success=False, error="第一志愿和第二志愿不能相同")
+    self_intro = data.get('self_intro', '')
+    if not self_intro:
+        return jsonify(success=False, error="自我介绍不能为空")
+    skills = data.get('skills', '')
+    if not skills:
+        return jsonify(success=False, error="技能不能为空")
+    projects = data.get('projects', '')
+    if not projects:
+        return jsonify(success=False, error="项目经历不能为空")
+    awards = data.get('awards', '')
+    if not awards:
+        return jsonify(success=False, error="获奖经历不能为空")
+    grade_point = data.get('grade_point', '')
+    grade_rank = data.get('grade_rank', '')
+    additional_file_change = data.get('additional_file_change', False)
+    additional_file = request.files['additional_file'] if 'additional_file' in request.files else None
+    additional_file_path = ''
+    if additional_file_change:
+        if additional_file:
+            filename = additional_file.filename
+            if '.' in filename and filename.rsplit('.', 1)[1].lower() in global_config.get('allowed_content_extensions', []):
+                save_path = os.path.join('uploads', f"{uid}_{submission['recruit_id']}_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}_{filename}")
+                os.makedirs(os.path.dirname(save_path), exist_ok=True)
+                additional_file.save(save_path)
+                additional_file_path = save_path
+            else:
+                return jsonify(success=False, error="附加文件格式不支持")
+        else:
+            return jsonify(success=False, error="未提供新的附加文件")
+    real_head_img_change = data.get('real_head_img_change', False)
+    real_head_img = request.files['real_head_img'] if 'real_head_img' in request.files else None
+    if real_head_img_change:
+        if not real_head_img:
+            return jsonify(success=False, error="必须上传正面照")
+        if not real_head_img.filename.lower().endswith(('.png', '.jpg', '.jpeg')):
+            return jsonify(success=False, error="正面照格式不支持,仅支持png/jpg/jpeg")
+        if not os.path.exists('photos'):
+            os.makedirs('photos')
+        real_head_img_path = f'photos/{uid}_{submission["recruit_id"]}_{int(datetime.datetime.now().timestamp())}_real.jpg'
+        real_head_img.save(real_head_img_path)
     try:
         with SQL() as sql:
+            update_data = {
+                '1st_choice': first_choice,
+                '2nd_choice': second_choice,
+                'self_intro': self_intro,
+                'skills': skills,
+                'projects': projects,
+                'awards': awards,
+                'grade_point': grade_point,
+                'grade_rank': grade_rank
+            }
+            old_additional_file_path = sql.fetch_one('resume_info', {'submit_id': submit_id}).get('additional_file_path', '')
+            if additional_file_change and old_additional_file_path and os.path.isfile(old_additional_file_path):
+                try:
+                    os.remove(old_additional_file_path)
+                except Exception as e:
+                    logger.warning(f"Failed to remove old additional file {old_additional_file_path}: {e}")
+            if additional_file_change and additional_file_path:
+                update_data['additional_file_path'] = additional_file_path
             sql.update('resume_info', update_data, {'submit_id': submit_id})
+            old_real_head_img_path = sql.fetch_one('resume_user_real_head_img', {'submit_id': submit_id}).get('real_head_img_path', '')
+            if real_head_img_change and old_real_head_img_path and os.path.isfile(old_real_head_img_path):
+                try:
+                    os.remove(old_real_head_img_path)
+                except Exception as e:
+                    logger.warning(f"Failed to remove old real head image {old_real_head_img_path}: {e}")
+            if real_head_img_change and real_head_img_path:
+                sql.update('resume_user_real_head_img', {'real_head_img_path': real_head_img_path}, {'submit_id': submit_id})
         logger.info(f"User {uid} updated resume {submit_id}")
-        return jsonify(success=True, message="简历更新成功")
+        return jsonify(success=True)
     except Exception as e:
         logger.error(f"Error updating resume: {e}")
-        return jsonify(success=False, error="更新简历时发生错误"), 500
+        return jsonify(success=False, error="更新简历时发生错误")
+    
+@flask_app.route('/resume/delete/<submit_id>', methods=['POST'])
+async def delete_resume(submit_id):
+    """
+    删除已提交的简历
+    """
+    uid = session['uid'] if 'uid' in session else None
+    if not uid:
+        return jsonify(success=False, error="用户未登录")
+    is_admin = False
+    if 'uid' in session:
+        with SQL() as sql:
+            permission_info = sql.fetch_one('userpermission', {'uid': session['uid']})
+            if permission_info and (permission_info.get('is_main_leader_admin') or permission_info.get('is_group_leader_admin')):
+                is_admin = True
+    try:
+        with SQL() as sql:
+            submission = sql.fetch_one("resume_submit", {'submit_id': submit_id})
+            if not submission:
+                return jsonify(success=False, error="未找到该简历")
+            user_id = submission['uid']
+            if user_id != uid and not is_admin:
+                return jsonify(success=False, error="无权限删除该简历"), 403
+            old_additional_file_path = sql.fetch_one('resume_info', {'submit_id': submit_id}).get('additional_file_path', '')
+            if old_additional_file_path and os.path.isfile(old_additional_file_path):
+                try:
+                    os.remove(old_additional_file_path)
+                except Exception as e:
+                    logger.warning(f"Failed to remove additional file {old_additional_file_path}: {e}")
+            old_real_head_img_path = sql.fetch_one('resume_user_real_head_img', {'submit_id': submit_id}).get('real_head_img_path', '')
+            if old_real_head_img_path and os.path.isfile(old_real_head_img_path):
+                try:
+                    os.remove(old_real_head_img_path)
+                except Exception as e:
+                    logger.warning(f"Failed to remove real head image {old_real_head_img_path}: {e}")
+            sql.delete('resume_submit', {'submit_id': submit_id})
+            sql.delete('resume_info', {'submit_id': submit_id})
+            sql.delete('resume_user_real_head_img', {'submit_id': submit_id})
+        logger.info(f"User {uid} deleted resume {submit_id}")
+        return jsonify(success=True)
+    except Exception as e:
+        logger.error(f"Error deleting resume: {e}")
+        return jsonify(success=False, error="删除简历时发生错误")
