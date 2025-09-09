@@ -5,7 +5,7 @@ from core.global_params import flask_app
 import logging
 import datetime
 
-from utils import SQL
+from utils import SQL, is_admin_check
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ async def get_all_users():
     uid = session['uid']
     with SQL() as sql:
         permission_info = sql.fetch_one('userpermission', {'uid': uid})
-        if not permission_info or not (permission_info.get('is_main_leader_admin') or permission_info.get('is_group_leader_admin')):
+        if not is_admin_check(permission_info):
             return jsonify(success=False, error="权限不足"), 403
         
         user_list = sql.fetch_all('userinfo', columns=['uid', 'name', 'email', 'registration_time'])
@@ -50,7 +50,7 @@ async def batch_delete_users():
     uid = session['uid']
     with SQL() as sql:
         permission_info = sql.fetch_one('userpermission', {'uid': uid})
-        if not permission_info or not (permission_info.get('is_main_leader_admin') or permission_info.get('is_group_leader_admin')):
+        if not is_admin_check(permission_info):
             return jsonify(success=False, error="权限不足"), 403
     
     data = request.json
@@ -83,7 +83,7 @@ async def update_user_permissions():
     uid = session['uid']
     with SQL() as sql:
         permission_info = sql.fetch_one('userpermission', {'uid': uid})
-        if not permission_info or not (permission_info.get('is_main_leader_admin') or permission_info.get('is_group_leader_admin')):
+        if not is_admin_check(permission_info):
             return jsonify(success=False, error="权限不足"), 403
     
     data = request.json
@@ -122,7 +122,7 @@ async def get_user_permissions(target_uid):
     uid = session['uid']
     with SQL() as sql:
         permission_info = sql.fetch_one('userpermission', {'uid': uid})
-        if not permission_info or not (permission_info.get('is_main_leader_admin') or permission_info.get('is_group_leader_admin')):
+        if not is_admin_check(permission_info):
             return jsonify(success=False, error="权限不足"), 403
         
         target_permissions = sql.fetch_one('userpermission', {'uid': target_uid})
@@ -144,7 +144,7 @@ async def search_users():
     uid = session['uid']
     with SQL() as sql:
         permission_info = sql.fetch_one('userpermission', {'uid': uid})
-        if not permission_info or not (permission_info.get('is_main_leader_admin') or permission_info.get('is_group_leader_admin')):
+        if not is_admin_check(permission_info):
             return jsonify(success=False, error="权限不足"), 403
     
     query = request.args.get('query', '').strip()

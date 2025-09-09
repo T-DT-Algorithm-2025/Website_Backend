@@ -1,11 +1,13 @@
 import utils
 import json
 import asyncio
-from flask import Flask
+from flask import Flask, jsonify
 import flask_cors
 import redis
 from datetime import timedelta
+import logging
 
+logger = logging.getLogger(__name__)
 
 # Global parameters
 database_config = json.load(open('config/database.json'))
@@ -26,10 +28,22 @@ db_config = {
 }
 utils.DatabaseManager.initialize_pool(**db_config)
 
-redis_client = utils.RedisClient(host=database_config['redis']['redis_host'], port=database_config['redis']['redis_port'], db=database_config['redis']['redis_db'], password=database_config['redis']['redis_password'])
+redis_client = utils.RedisClient(
+    host=database_config['redis']['redis_host'], 
+    port=database_config['redis']['redis_port'], 
+    db=database_config['redis']['redis_db'], 
+    password=database_config['redis']['redis_password']
+)
 
 mailer = utils.Mailer(mail_config['host'], mail_config['port'],
                     mail_config['user'], mail_config['passwd'])
+
+try:
+    sms_config = json.load(open('config/sms.json'))
+    sms_client = utils.SmsBao(sms_config['username'], sms_config['password'])
+except (FileNotFoundError, KeyError):
+    sms_client = None
+    logger.warning("警告: 短信配置文件 'config/sms.json' 未找到或格式不正确，短信功能将不可用。")
 
 flask_app = Flask(__name__)
 flask_app.debug = False
@@ -39,61 +53,76 @@ flask_app.config['MAX_CONTENT_LENGTH'] = global_config.get('max_content_length',
 
 @flask_app.errorhandler(413)
 def request_entity_too_large(error):
-    return f'文件太大，请上传小于{flask_app.config["MAX_CONTENT_LENGTH"] // 1024 // 1024}MB的文件', 413
+    return jsonify(success=False, error=f'文件太大，请上传小于{flask_app.config["MAX_CONTENT_LENGTH"] // 1024 // 1024}MB的文件'), 413
 
 flask_cors.CORS(flask_app)
 
 async def check_data_base():
-    sql_tables = ['user', 'userinfo', 'useravatar', 'userpermission', 'recruit', 'userphone', 'resume_submit', 'resume_info', 'resume_review', 'resume_status_names']
+    sql_tables = [
+        'user', 'userinfo', 'useravatar', 'userpermission', 'recruit', 'userphone', 'usermailverify',
+        'resume_submit', 'resume_info', 'resume_review', 'resume_status_names', 'resume_user_real_head_img',
+        'interview_info', 'interview_room', 'interview_schedule', 'interview_review'
+    ]
     sql_params = {
-        "user": ("uid char(20) primary key", "openid_qq char(64)", "openid_wx char(64)", "mail char(255)", "pwd char(64)"),
-        "userinfo": ("uid char(20) primary key", "nickname char(64)", "gender char(10)", "realname char(64)", 
+        "user": ("uid char(36) primary key", "openid_qq char(64)", "openid_wx char(64)", "mail char(64)", "pwd char(64)"),
+        "userinfo": ("uid char(36) primary key", "nickname char(64)", "gender char(10)", "realname char(64)", "registration_time DATETIME DEFAULT CURRENT_TIMESTAMP",
                      "student_id char(20)", "department char(64)", "major char(64)", "grade char(10)", "rank char(10)"),
-        "useravatar": ("uid char(20) primary key", "avatar_path char(255)"),
-        "userpermission": ("uid char(20) primary key", "is_main_leader_admin bool", "is_group_leader_admin bool", "is_member_admin bool", "is_banned bool", "ban_reason char(255)"),
-        "userphone": ("uid char(20) primary key", "phone_number char(20)", "is_verified bool", "verification_code char(10)", "code_sent_time datetime"),
-        "usermailverify": ("mail char(20) primary key", "verification_code char(10)", "code_sent_time datetime"),
-        "recruit": ("recruit_id char(20) primary key", "name char(64)", "start_time datetime", "end_time datetime", "description text", "is_active bool"),
-        "resume_submit": ("submit_id char(20) primary key", "uid char(20)", "recruit_id char(20)", "submit_time datetime", "status int"),
-        "resume_info": ("submit_id char(20) primary key", "1st_choice char(64)", "2nd_choice char(64)", "self_intro text", "skills text", "projects text", "awards text", "grade_point char(10)", "grade_rank char(10)", "additional_file_path text"),
-        "resume_review": ("review_id char(20) primary key", "submit_id char(20)", "reviewer_uid char(20)", "review_time datetime", "comments text", "score int", "passed bool"),
+        "useravatar": ("uid char(36) primary key", "avatar_path char(255)"),
+        "userpermission": ("uid char(36) primary key", "is_main_leader_admin bool", "is_group_leader_admin bool", "is_member_admin bool", "is_banned bool", "ban_reason char(255)"),
+        "userphone": ("uid char(36) primary key", "phone_number char(20)", "is_verified bool", "verification_code char(10)", "code_sent_time datetime"),
+        "usermailverify": ("mail char(64) primary key", "verification_code char(10)", "code_sent_time datetime"),
+        "recruit": ("recruit_id char(36) primary key", "name char(64)", "start_time datetime", "end_time datetime", "description text", "is_active bool"),
+        "resume_submit": ("submit_id char(64) primary key", "uid char(36)", "recruit_id char(36)", "submit_time datetime", "status int"),
+        "resume_info": ("submit_id char(64) primary key", "first_choice char(64)", "second_choice char(64)", "self_intro text", "skills text", "projects text", "awards text", "grade_point char(10)", "grade_rank char(10)", "additional_file_path text"),
+        "resume_review": ("review_id char(36) primary key", "submit_id char(64)", "reviewer_uid char(36)", "review_time datetime", "comments text", "score int", "passed bool"),
         "resume_status_names": ("status_id int primary key", "status_name char(64)"),
-        "resume_user_real_head_img": ("submit_id char(20) primary key", "real_head_img_path char(255)"),
-        "interview_info": ("interview_id char(20) primary key", "submit_id char(20)", "interviewee_uid char(20)", "interview_time datetime", "location char(255)", "notes text"),
-        "interview_room": ("room_id char(20) primary key", "room_name char(64)","location char(255)", "recruit_id char(20)"),
-        "interview_schedule": ("schedule_id char(20) primary key", "room_id char(20)", "start_time datetime", "end_time datetime", "already_booked bool", "booked_interview_id char(20)"),
-        "interview_review": ("review_id char(20) primary key", "interview_id char(20)", "reviewer_uid char(20)", "review_time datetime", "comments text", "score int", "passed bool")
+        "resume_user_real_head_img": ("submit_id char(64) primary key", "real_head_img_path char(255)"),
+        "interview_info": ("interview_id char(36) primary key", "submit_id char(64)", "interviewee_uid char(36)", "interview_time datetime", "location char(255)", "notes text"),
+        "interview_room": ("room_id char(36) primary key", "room_name char(64)","location char(255)", "recruit_id char(36)", "applicable_to_choice char(64)"),
+        "interview_schedule": ("schedule_id char(36) primary key", "room_id char(36)", "start_time datetime", "end_time datetime", "already_booked bool", "booked_interview_id char(36)"),
+        "interview_review": ("review_id char(36) primary key", "interview_id char(36)", "reviewer_uid char(36)", "review_time datetime", "comments text", "score int", "passed bool")
     }
     for table in sql_tables:
         with utils.SQL() as sql:
-            form = sql.fetch_one('information_schema.TABLES', {'TABLE_NAME': table})
+            # 修正表名检查，确保在数据库名包含'-'等特殊字符时也能正常工作
+            db_name = db_config['db']
+            form = sql.execute_query(
+                "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s",
+                (db_name, table)
+            )
             if not form:
-                sql.execute_query(f"CREATE TABLE `{table}` ({', '.join(sql_params[table])})")
+                # 使用反引号保护表名
+                create_sql = f"CREATE TABLE `{table}` ({', '.join(sql_params[table])})"
+                sql.execute_update(create_sql)
+                print(f"Table '{table}' created.")
                 
     #status check
-    status_list = ["未处理", "初选通过", "初选未通过", "复试通过", "复试未通过", "录取"]
+    status_list = ["未处理", "简历通过", "简历未通过", "等待面试", "面试未通过", "已录取"]
     with utils.SQL() as sql:
         existing_status = sql.fetch_all('resume_status_names')
-        existing_status_names = [item['status_name'] for item in existing_status] if existing_status else []
+        existing_status_ids = [item['status_id'] for item in existing_status] if existing_status else []
         for idx, status in enumerate(status_list):
-            if status not in existing_status_names:
-                sql.execute_query("INSERT INTO `resume_status_names` (status_id, status_name) VALUES (%s, %s)", (idx, status))
+            if idx not in existing_status_ids:
+                sql.insert('resume_status_names', {'status_id': idx, 'status_name': status})
+
 
 async def initialize_mailer():
     try:
         await mailer.connect()
     except Exception as e:
         print(f"邮件服务初始化失败: {e}")
-        raise
-    
-async def initialize():
-    await initialize_mailer()
-    await check_data_base()
 
-loop = asyncio.get_event_loop()
-if loop.is_running():
+async def initialize():
+    await check_data_base()
+    await initialize_mailer()
+
+# 使用 asyncio.run() 来替代旧的 event loop 管理方式，更简洁健壮
+try:
+    asyncio.run(initialize())
+except RuntimeError:
+    # 如果事件循环已在运行（例如在某些环境中），则创建任务
+    loop = asyncio.get_event_loop()
     loop.create_task(initialize())
-else:
-    loop.run_until_complete(initialize())
+
 
 resume_submit_ip_time_history = {}

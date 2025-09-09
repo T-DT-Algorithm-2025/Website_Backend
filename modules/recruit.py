@@ -5,7 +5,7 @@ from core.global_params import flask_app
 import logging
 import datetime
 
-from utils import SQL
+from utils import SQL, is_admin_check
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ async def get_recruit_list():
         uid = session['uid']
         with SQL() as sql:
             permission_info = sql.fetch_one('userpermission', {'uid': uid})
-            if permission_info and (permission_info.get('is_main_leader_admin') or permission_info.get('is_group_leader_admin')):
+            if is_admin_check(permission_info):
                 is_admin = True
     
     if recruit_list is not None:
@@ -37,7 +37,7 @@ async def get_recruit_list():
             is_applyed = False
             if 'uid' in session:
                 with SQL() as sql:
-                    application = sql.fetch_one('applications', {'uid': session['uid'], 'recruit_id': item['recruit_id']})
+                    application = sql.fetch_one('resume_submit', {'uid': session['uid'], 'recruit_id': item['recruit_id']})
                     if application:
                         is_applyed = True
             recruit_info.append({
@@ -70,7 +70,7 @@ async def get_recruit_info(recruit_id):
         uid = session['uid']
         with SQL() as sql:
             permission_info = sql.fetch_one('userpermission', {'uid': uid})
-            if permission_info and (permission_info.get('is_main_leader_admin') or permission_info.get('is_group_leader_admin')):
+            if is_admin_check(permission_info):
                 is_admin = True
     
     cnt_time = datetime.datetime.now()
@@ -80,7 +80,7 @@ async def get_recruit_info(recruit_id):
     is_applyed = False
     if 'uid' in session:
         with SQL() as sql:
-            application = sql.fetch_one('applications', {'uid': session['uid'], 'recruit_id': recruit_id})
+            application = sql.fetch_one('resume_submit', {'uid': session['uid'], 'recruit_id': recruit_id})
             if application:
                 is_applyed = True
             
@@ -108,7 +108,7 @@ async def create_recruit():
     uid = session['uid']
     with SQL() as sql:
         permission_info = sql.fetch_one('userpermission', {'uid': uid})
-        if not permission_info or not (permission_info.get('is_main_leader_admin') or permission_info.get('is_group_leader_admin')):
+        if not is_admin_check(permission_info):
             return jsonify(success=False, error="权限不足"), 403
     
     data = request.json
@@ -121,7 +121,7 @@ async def create_recruit():
             recruit_id = str(uuid.uuid4())
             while sql.fetch_one('recruit', {'recruit_id': recruit_id}):
                 recruit_id = str(uuid.uuid4())
-            sql.insert_one('recruit', {
+            sql.insert('recruit', {
                 'recruit_id': recruit_id,
                 'name': data['name'],
                 'start_time': data['start_time'],
@@ -145,7 +145,7 @@ async def update_recruit(recruit_id):
     uid = session['uid']
     with SQL() as sql:
         permission_info = sql.fetch_one('userpermission', {'uid': uid})
-        if not permission_info or not (permission_info.get('is_main_leader_admin') or permission_info.get('is_group_leader_admin')):
+        if not is_admin_check(permission_info):
             return jsonify(success=False, error="权限不足"), 403
     
     data = request.json
@@ -174,7 +174,7 @@ async def delete_recruit(recruit_id):
     uid = session['uid']
     with SQL() as sql:
         permission_info = sql.fetch_one('userpermission', {'uid': uid})
-        if not permission_info or not (permission_info.get('is_main_leader_admin') or permission_info.get('is_group_leader_admin')):
+        if not is_admin_check(permission_info):
             return jsonify(success=False, error="权限不足"), 403
     
     try:

@@ -59,7 +59,10 @@ async def handle_avatar(uid, avatar_url):
                 with open(avatar_path, 'wb') as f:
                     f.write(await response.read())
                 with SQL() as sql:
-                    sql.update('useravatar', {'avatar_path': avatar_path}, {'uid': uid})
+                    if sql.fetch_one('useravatar', {'uid': uid}):
+                        sql.update('useravatar', {'avatar_path': avatar_path}, {'uid': uid})
+                    else:
+                        sql.insert('useravatar', {'uid': uid, 'avatar_path': avatar_path})
 
 @flask_app.route('/oauth/qq/callback', methods=['GET'])
 async def on_qq_callback():
@@ -98,8 +101,8 @@ async def on_qq_callback():
     # Check if user exists
     with SQL() as sql:
         user = sql.fetch_one('user', {'openid_qq': openid})
-        if 'uid' in session and session['uid'] and 'bundle' in session and session['bundle'] == 'qq':
-            session.pop('bundle', None)
+        if 'uid' in session and session['uid'] and 'login_bundle' in session and session['login_bundle'] == 'qq':
+            session.pop('login_bundle', None)
             # User is logged in, bind account
             if user and user['uid'] != session['uid']:
                 return jsonify(success=False, error="该QQ号已绑定其他账号")
@@ -211,13 +214,19 @@ async def on_mail_register():
         if (datetime.now() - code_entry['code_sent_time']).total_seconds() > 600:
             return jsonify(success=False, error="验证码已过期，请重新获取")
 
-        uid = str(uuid.uuid4())
-        while sql.fetch_one('user', {'uid': uid}):
+        if 'uid' in session and session['uid'] and 'login_bundle' in session and session['login_bundle'] == 'mail':
+            session.pop('login_bundle', None)
+            # User is logged in, bind account
+            sql.update('user', {'mail': mail, 'pwd': pwd}, {'uid': session['uid']})
+            uid = session['uid']
+        else:
             uid = str(uuid.uuid4())
-        sql.insert('user', {'uid': uid, 'mail': mail, 'pwd': pwd})
-        sql.insert('userinfo', {'uid': uid})
-        sql.insert('useravatar', {'uid': uid, 'avatar_path': ''})
-        sql.delete('usermailverify', {'mail': mail})
+            while sql.fetch_one('user', {'uid': uid}):
+                uid = str(uuid.uuid4())
+            sql.insert('user', {'uid': uid, 'mail': mail, 'pwd': pwd})
+            sql.insert('userinfo', {'uid': uid})
+            sql.insert('useravatar', {'uid': uid, 'avatar_path': ''})
+            sql.delete('usermailverify', {'mail': mail})
 
     session.permanent = True
     session['uid'] = uid

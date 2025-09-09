@@ -1,3 +1,4 @@
+import asyncio
 import os
 import uuid
 from flask import request, jsonify, session, send_file
@@ -5,7 +6,8 @@ from core.global_params import flask_app
 import logging
 import datetime
 
-from utils import SQL
+from utils import SQL, is_admin_check
+from utils.notification import send_status_change_notification
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +22,7 @@ async def get_all_resumes():
     uid = session['uid']
     with SQL() as sql:
         permission_info = sql.fetch_one('userpermission', {'uid': uid})
-        if not permission_info or not (permission_info.get('is_main_leader_admin') or permission_info.get('is_group_leader_admin')):
+        if not is_admin_check(permission_info):
             return jsonify(success=False, error="权限不足"), 403
         
         resume_list = sql.fetch_all('resume_submit', columns=['submit_id', 'uid', 'recruit_id', 'submit_time', 'status'])
@@ -51,7 +53,7 @@ async def batch_delete_resumes():
     uid = session['uid']
     with SQL() as sql:
         permission_info = sql.fetch_one('userpermission', {'uid': uid})
-        if not permission_info or not (permission_info.get('is_main_leader_admin') or permission_info.get('is_group_leader_admin')):
+        if not is_admin_check(permission_info):
             return jsonify(success=False, error="权限不足"), 403
     
     data = request.json
@@ -104,7 +106,7 @@ async def batch_update_resume_status():
     uid = session['uid']
     with SQL() as sql:
         permission_info = sql.fetch_one('userpermission', {'uid': uid})
-        if not permission_info or not (permission_info.get('is_main_leader_admin') or permission_info.get('is_group_leader_admin')):
+        if not is_admin_check(permission_info):
             return jsonify(success=False, error="权限不足"), 403
     
     data = request.json
@@ -121,8 +123,13 @@ async def batch_update_resume_status():
     
     try:
         with SQL() as sql:
+            status_name_record = sql.fetch_one('resume_status_names', {'status_id': new_status})
+            new_status_name = status_name_record['status_name'] if status_name_record else "未知状态"
+
             for submit_id in submit_ids:
                 sql.update('resume_submit', {'status': new_status}, {'submit_id': submit_id})
+                # 异步发送通知
+                asyncio.create_task(send_status_change_notification(submit_id, new_status_name))
         return jsonify(success=True, message="简历状态批量更新成功")
     except Exception as e:
         logger.error(f"批量更新简历状态时出错: {e}")
@@ -142,7 +149,7 @@ async def admin_review_resume(submit_id):
     uid = session['uid']
     with SQL() as sql:
         permission_info = sql.fetch_one('userpermission', {'uid': uid})
-        if not permission_info or not (permission_info.get('is_main_leader_admin') or permission_info.get('is_group_leader_admin')):
+        if not is_admin_check(permission_info):
             return jsonify(success=False, error="权限不足"), 403
     
     data = request.json
@@ -190,7 +197,7 @@ async def get_admin_review(submit_id):
     uid = session['uid']
     with SQL() as sql:
         permission_info = sql.fetch_one('userpermission', {'uid': uid})
-        if not permission_info or not (permission_info.get('is_main_leader_admin') or permission_info.get('is_group_leader_admin')):
+        if not is_admin_check(permission_info):
             return jsonify(success=False, error="权限不足"), 403
 
     try:
@@ -215,7 +222,7 @@ async def delete_admin_review(review_id):
     uid = session['uid']
     with SQL() as sql:
         permission_info = sql.fetch_one('userpermission', {'uid': uid})
-        if not permission_info or not (permission_info.get('is_main_leader_admin') or permission_info.get('is_group_leader_admin')):
+        if not is_admin_check(permission_info):
             return jsonify(success=False, error="权限不足"), 403
 
     try:

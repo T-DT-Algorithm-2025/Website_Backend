@@ -214,6 +214,7 @@ config/config.json
 config/database.json
 config/mail.json
 config/oauth.json
+config/sms.json
 
 # User
 sync2server.sh
