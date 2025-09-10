@@ -182,6 +182,14 @@ async def list_user_resumes():
             results = []
             for submission in submissions:
                 status = submission.get('status', 0)
+                submit_id = submission.get('submit_id')
+                if status == RESUME_PASSED_STATUS:
+                    cnt_time = datetime.datetime.now().timestamp()
+                    recruit_interview_setting = sql.fetch_one('recruit_interview_settings', {'recruit_id': submission.get('recruit_id')})
+                    if recruit_interview_setting:
+                        if not (recruit_interview_setting.get('interview_start_time', 0) <= cnt_time <= recruit_interview_setting.get('interview_end_time', 0)):
+                            submission['status'] = NO_INTERVIEW_STATUS
+                            sql.update('resume_submit', {'status': NO_INTERVIEW_STATUS}, {'submit_id': submit_id})
                  # Bug修复: 表名 'status_name' 应为 'resume_status_names'
                 status_name_record = sql.fetch_one("resume_status_names", {'status_id': status})
                 
