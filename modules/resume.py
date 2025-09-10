@@ -237,11 +237,41 @@ async def download_additional_file(submit_id):
             file_path = submission['additional_file_path']
             if not os.path.isfile(file_path):
                 return jsonify(success=False, error="附加文件不存在或已丢失"), 404
-                
-        return send_file(file_path, as_attachment=True)
+
+        return send_file(os.path.join(os.getcwd(), file_path), as_attachment=True)
     except Exception as e:
         logger.error(f"Error downloading additional file for submit_id {submit_id}: {e}")
         return jsonify(success=False, error="下载附加文件时发生错误"), 500
+
+@flask_app.route('/resume/real_head_img/<submit_id>', methods=['GET'])
+async def get_real_head_img(submit_id):
+    uid = session.get('uid')
+    if not uid:
+        return jsonify(success=False, error="用户未登录"), 401
+    
+    try:
+        with SQL() as sql:
+            submit_info = sql.fetch_one("resume_submit", {'submit_id': submit_id})
+            if not submit_info:
+                return jsonify(success=False, error="未找到该简历"), 404
+            
+            user_id = submit_info.get('uid')
+            permission_info = sql.fetch_one('userpermission', {'uid': uid})
+            if user_id != uid and not is_admin_check(permission_info):
+                return jsonify(success=False, error="无权限查看该正面照"), 403
+
+            submission = sql.fetch_one("resume_user_real_head_img", {'submit_id': submit_id})
+            if not submission or not submission.get('real_head_img_path'):
+                return jsonify(success=False, error="未找到正面照"), 404
+
+            file_path = submission['real_head_img_path']
+            if not os.path.isfile(file_path):
+                return jsonify(success=False, error="正面照不存在或已丢失"), 404
+
+        return send_file(os.path.join(os.getcwd(), file_path), as_attachment=False)
+    except Exception as e:
+        logger.error(f"Error retrieving real head image for submit_id {submit_id}: {e}")
+        return jsonify(success=False, error="获取正面照时发生错误"), 500
 
 @flask_app.route('/resume/update/<submit_id>', methods=['POST'])
 async def update_resume(submit_id):
