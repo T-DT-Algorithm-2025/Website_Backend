@@ -18,6 +18,41 @@ def is_admin():
     with SQL() as sql:
         permission_info = sql.fetch_one('userpermission', {'uid': uid})
         return is_admin_check(permission_info)
+    
+@flask_app.route('/interview/available/settings/<recruit_id>', methods=['POST'])
+async def set_interview_availability(recruit_id):
+    """
+    设置指定招聘（recruit_id）的面试地点预约时间段，管理员专用接口
+    请求体应包含 JSON 字段 "book_start_time" 和 "book_end_time"，格式为 'YYYY-MM-DD HH:MM:SS'
+    """
+    if not is_admin():
+        return jsonify(success=False, error="权限不足"), 403
+    
+    data = request.json
+    if not data or 'book_start_time' not in data or 'book_end_time' not in data:
+        return jsonify(success=False, error="请求体缺少必要字段(book_start_time, book_end_time)"), 400
+    try:
+        book_start_time = data['book_start_time'].strftime('%Y-%m-%d %H:%M:%S')
+        book_end_time = data['book_end_time'].strftime('%Y-%m-%d %H:%M:%S')
+    except Exception as e:
+        return jsonify(success=False, error="时间格式错误，应为 'YYYY-MM-DD HH:MM:SS'"), 400
+    if book_start_time >= book_end_time:
+        return jsonify(success=False, error="预约开始时间必须早于结束时间"), 400
+
+    try:
+        with SQL() as sql:
+            recruit_info = sql.fetch_one('recruit', {'recruit_id': recruit_id})
+            if not recruit_info:
+                return jsonify(success=False, error="无效的招聘ID"), 404
+
+            sql.update('recruit', {'recruit_id': recruit_id}, {
+                'book_start_time': book_start_time,
+                'book_end_time': book_end_time
+            })
+        return jsonify(success=True, message="面试地点预约时间设置成功")
+    except Exception as e:
+        logger.error(f"设置面试地点预约时间时出错: {e}")
+        return jsonify(success=False, error="服务器内部错误"), 500
 
 @flask_app.route('/admin/interview/room/add', methods=['POST'])
 async def add_interview_room():

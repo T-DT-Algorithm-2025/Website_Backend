@@ -13,7 +13,42 @@ logger = logging.getLogger(__name__)
 
 # 定义简历状态ID常量
 RESUME_PASSED_STATUS = 1    # "简历通过"
-AWAITING_INTERVIEW_STATUS = 3 # "等待面试"
+AWAITING_INTERVIEW_STATUS = 3 # "等待预约面试"
+
+@flask_app.route('/interview/available/<recruit_id>', methods=['GET'])
+async def get_available_interview_rooms(recruit_id):
+    """
+    获取指定招聘（recruit_id）是否可预约面试地点
+    """
+    uid = session.get('uid')
+    if not uid:
+        return jsonify(success=False, error="用户未登录"), 401
+
+    try:
+        with SQL() as sql:
+            recruit_info = sql.fetch_one('recruit', {'recruit_id': recruit_id})
+            if not recruit_info or not recruit_info.get('is_active', False):
+                return jsonify(success=True, data={"available": False})
+
+            # 检查用户是否有通过的简历
+            submission = sql.fetch_one(
+                'resume_submit',
+                {'uid': uid, 'recruit_id': recruit_id, 'status': RESUME_PASSED_STATUS}
+            )
+            if not submission:
+                return jsonify(success=True, data={"available": False})
+
+            recruit_interview_settings = sql.fetch_one('recruit_interview_settings', {'recruit_id': recruit_id})
+            if not recruit_interview_settings:
+                return jsonify(success=True, data={"available": False})
+            cnt_time = datetime.datetime.now()
+            if not (recruit_interview_settings['interview_start_time'] <= cnt_time <= recruit_interview_settings['interview_end_time']):
+                return jsonify(success=True, data={"available": False, "start_time": recruit_interview_settings['interview_start_time'].strftime('%Y-%m-%d %H:%M:%S'), "end_time": recruit_interview_settings['interview_end_time'].strftime('%Y-%m-%d %H:%M:%S')})
+
+            return jsonify(success=True, data={"available": True, "start_time": recruit_interview_settings['interview_start_time'].strftime('%Y-%m-%d %H:%M:%S'), "end_time": recruit_interview_settings['interview_end_time'].strftime('%Y-%m-%d %H:%M:%S')})
+    except Exception as e:
+        logger.error(f"获取面试地点可预约状态时出错: {e}")
+        return jsonify(success=False, error="服务器内部错误"), 500
 
 @flask_app.route('/interview/schedule/available/<submit_id>', methods=['GET'])
 async def get_available_schedules(submit_id):
@@ -179,6 +214,9 @@ async def get_my_bookings(recruit_id):
                 WHERE
                     ii.interviewee_uid = %s AND rs.recruit_id = %s
             """
+            if '%' in recruit_id or ';' in recruit_id or '\"' in recruit_id or '\'' in recruit_id:
+                # 防止SQL注入攻击
+                return jsonify(success=False, error="无效的招聘ID"), 400
             interviews = sql.execute_query(query, (uid, recruit_id))
 
             response_data = [

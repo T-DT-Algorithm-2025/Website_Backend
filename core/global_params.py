@@ -80,7 +80,8 @@ async def check_data_base():
         "interview_info": ("interview_id char(36) primary key", "submit_id char(64)", "interviewee_uid char(36)", "interview_time datetime", "location char(255)", "notes text"),
         "interview_room": ("room_id char(36) primary key", "room_name char(64)","location char(255)", "recruit_id char(36)", "applicable_to_choice char(64)"),
         "interview_schedule": ("schedule_id char(36) primary key", "room_id char(36)", "start_time datetime", "end_time datetime", "already_booked bool", "booked_interview_id char(36)"),
-        "interview_review": ("review_id char(36) primary key", "interview_id char(36)", "reviewer_uid char(36)", "review_time datetime", "comments text", "score int", "passed bool")
+        "interview_review": ("review_id char(36) primary key", "interview_id char(36)", "reviewer_uid char(36)", "review_time datetime", "comments text", "score int", "passed bool"),
+        "recruit_interview_settings": ("recruit_id char(36) primary key", "book_start_time datetime", "book_end_time datetime")
     }
 
     with utils.SQL() as sql:
@@ -125,7 +126,7 @@ async def check_data_base():
                         print(f"Removed extra column '{col_name}' from table '{table}'.")
 
     # 状态检查
-    status_list = ["未处理", "简历通过", "简历未通过", "等待面试", "面试未通过", "已录取"]
+    status_list = ["未处理", "简历通过", "简历未通过", "等待面试", "面试未通过", "已录取", "未参加面试"]
     with utils.SQL() as sql:
         existing_status = sql.fetch_all('resume_status_names')
         existing_status_ids = [item['status_id'] for item in existing_status] if existing_status else []

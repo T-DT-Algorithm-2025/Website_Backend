@@ -12,6 +12,9 @@ from utils.notification import send_application_submission_email
 available_positions = ['算法组', '电控组', '机械组', '运营组']
 available_2st_positions = ['运营组']
 
+RESUME_PASSED_STATUS = 1    # "简历通过"
+NO_INTERVIEW_STATUS = 6     # "未参加面试"
+
 logger = logging.getLogger(__name__)
 
 @flask_app.route('/recruit/apply', methods=['POST'])
@@ -33,6 +36,16 @@ async def apply_recruit():
         existing_application = sql.fetch_one('resume_submit', {'uid': uid, 'recruit_id': recruit_id})
         if existing_application:
             return jsonify(success=False, error="您已提交过申请，不能重复提交"), 409
+        
+    with SQL() as sql:
+        recruit_info = sql.fetch_one('recruit', {'recruit_id': recruit_id})
+        if not recruit_info:
+            return jsonify(success=False, error="无效的招聘ID"), 400
+        recruit_start_time = recruit_info.get('start_time', 0)
+        recruit_end_time = recruit_info.get('end_time', 0)
+        current_time = datetime.datetime.now().timestamp()
+        if current_time < recruit_start_time or current_time > recruit_end_time:
+            return jsonify(success=False, error="当前不在招聘时间范围内"), 400
     
     submit_time = datetime.datetime.now()
     status = 0  # 初始状态为未处理
@@ -134,6 +147,14 @@ async def get_resume_info(submit_id):
             
         status = submission.get('status', 0)
         # Bug修复: 表名 'status_name' 应为 'resume_status_names'
+        if status == RESUME_PASSED_STATUS:
+            cnt_time = datetime.datetime.now().timestamp()
+            recruit_interview_setting = sql.fetch_one('recruit_interview_settings', {'recruit_id': submission.get('recruit_id')})
+            if recruit_interview_setting:
+                if not (recruit_interview_setting.get('interview_start_time', 0) <= cnt_time <= recruit_interview_setting.get('interview_end_time', 0)):
+                    submission['status'] = NO_INTERVIEW_STATUS
+                    sql.update('resume_submit', {'status': NO_INTERVIEW_STATUS}, {'submit_id': submit_id})
+        
         status_name_record = sql.fetch_one("resume_status_names", {'status_id': status})
         submission['status_name'] = status_name_record['status_name'] if status_name_record else "未知状态"
     
@@ -226,6 +247,18 @@ async def update_resume(submit_id):
             return jsonify(success=False, error="未找到该简历"), 404
         if submission.get('uid') != uid:
             return jsonify(success=False, error="无权限修改该简历"), 403
+        
+        
+    with SQL() as sql:
+        recruit_id = submission.get('recruit_id')
+        recruit_info = sql.fetch_one('recruit', {'recruit_id': recruit_id})
+        if not recruit_info:
+            return jsonify(success=False, error="无效的招聘ID"), 400
+        recruit_start_time = recruit_info.get('start_time', 0)
+        recruit_end_time = recruit_info.get('end_time', 0)
+        current_time = datetime.datetime.now().timestamp()
+        if current_time < recruit_start_time or current_time > recruit_end_time:
+            return jsonify(success=False, error="当前不在招聘时间范围内"), 400
 
     # Bug修复: 文件上传请求，数据在 request.form
     data = request.form
@@ -338,6 +371,17 @@ async def delete_resume(submit_id):
             user_id = submission['uid']
             if user_id != uid and not is_admin:
                 return jsonify(success=False, error="无权限删除该简历"), 403
+            if not is_admin and user_id == uid:
+                with SQL() as sql:
+                    recruit_id = submission.get('recruit_id')
+                    recruit_info = sql.fetch_one('recruit', {'recruit_id': recruit_id})
+                    if not recruit_info:
+                        return jsonify(success=False, error="无效的招聘ID"), 400
+                    recruit_start_time = recruit_info.get('start_time', 0)
+                    recruit_end_time = recruit_info.get('end_time', 0)
+                    current_time = datetime.datetime.now().timestamp()
+                    if current_time < recruit_start_time or current_time > recruit_end_time:
+                        return jsonify(success=False, error="当前不在招聘时间范围内，无法删除简历"), 400
             old_additional_file_path = sql.fetch_one('resume_info', {'submit_id': submit_id}).get('additional_file_path', '')
             if old_additional_file_path and os.path.isfile(old_additional_file_path):
                 try:
