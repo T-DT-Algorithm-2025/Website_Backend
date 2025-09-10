@@ -65,7 +65,7 @@ async def check_data_base():
     ]
     sql_params = {
         "user": ("uid char(36) primary key", "openid_qq char(64)", "openid_wx char(64)", "mail char(64)", "pwd char(64)"),
-        "userinfo": ("uid char(36) primary key", "nickname char(64)", "gender char(10)", "realname char(64)", "registration_time DATETIME DEFAULT CURRENT_TIMESTAMP",
+        "userinfo": ("uid char(36) primary key", "nickname char(64)", "gender char(10)", "realname char(64)", "registration_time datetime",
                      "student_id char(20)", "department char(64)", "major char(64)", "grade char(10)", "rank char(10)"),
         "useravatar": ("uid char(36) primary key", "avatar_path char(255)"),
         "userpermission": ("uid char(36) primary key", "is_main_leader_admin bool", "is_group_leader_admin bool", "is_member_admin bool", "is_banned bool", "ban_reason char(255)"),
@@ -82,21 +82,49 @@ async def check_data_base():
         "interview_schedule": ("schedule_id char(36) primary key", "room_id char(36)", "start_time datetime", "end_time datetime", "already_booked bool", "booked_interview_id char(36)"),
         "interview_review": ("review_id char(36) primary key", "interview_id char(36)", "reviewer_uid char(36)", "review_time datetime", "comments text", "score int", "passed bool")
     }
-    for table in sql_tables:
-        with utils.SQL() as sql:
-            # 修正表名检查，确保在数据库名包含'-'等特殊字符时也能正常工作
-            db_name = db_config['db']
+
+    with utils.SQL() as sql:
+        db_name = db_config['db']
+        for table in sql_tables:
+            # 检查表是否存在
             form = sql.execute_query(
                 "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s",
                 (db_name, table)
             )
             if not form:
-                # 使用反引号保护表名
+                # 如果表不存在，则创建
                 create_sql = f"CREATE TABLE `{table}` ({', '.join(sql_params[table])})"
                 sql.execute_update(create_sql)
                 print(f"Table '{table}' created.")
-                
-    #status check
+            else:
+                # 如果表存在，则检查字段
+                # 获取现有字段
+                existing_columns_info = sql.execute_query(f"SHOW COLUMNS FROM `{table}`")
+                existing_columns = {col['Field'] for col in existing_columns_info}
+
+                # 获取期望的字段
+                expected_columns_defs = sql_params[table]
+                expected_columns = {col.strip().split()[0].replace('`', '') for col in expected_columns_defs}
+
+                # 添加缺失的字段
+                missing_columns = expected_columns - existing_columns
+                for col_name in missing_columns:
+                    col_def = next(s for s in expected_columns_defs if s.strip().startswith(col_name))
+                    alter_sql = f"ALTER TABLE `{table}` ADD COLUMN {col_def}"
+                    sql.execute_update(alter_sql)
+                    print(f"Added missing column '{col_name}' to table '{table}'.")
+
+                # 删除多余的字段
+                extra_columns = existing_columns - expected_columns
+                for col_name in extra_columns:
+                    # 安全检查：避免误删主键
+                    is_primary = any(col['Key'] == 'PRI' for col in existing_columns_info if col['Field'] == col_name)
+                    if not is_primary:
+                        alter_sql = f"ALTER TABLE `{table}` DROP COLUMN `{col_name}`"
+                        sql.execute_update(alter_sql)
+                        print(f"Removed extra column '{col_name}' from table '{table}'.")
+
+    # 状态检查
     status_list = ["未处理", "简历通过", "简历未通过", "等待面试", "面试未通过", "已录取"]
     with utils.SQL() as sql:
         existing_status = sql.fetch_all('resume_status_names')
@@ -104,6 +132,11 @@ async def check_data_base():
         for idx, status in enumerate(status_list):
             if idx not in existing_status_ids:
                 sql.insert('resume_status_names', {'status_id': idx, 'status_name': status})
+        for item in existing_status:
+            if item['status_id'] < 0 or item['status_id'] >= len(status_list):
+                sql.delete('resume_status_names', {'status_id': item['status_id']})
+            elif item['status_name'] != status_list[item['status_id']]:
+                sql.update('resume_status_names', {'status_name': status_list[item['status_id']]}, {'status_id': item['status_id']})
 
 
 async def initialize_mailer():

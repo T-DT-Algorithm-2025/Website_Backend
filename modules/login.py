@@ -115,7 +115,7 @@ async def on_qq_callback():
             while sql.fetch_one('user', {'uid': uid}):
                 uid = str(uuid.uuid4())
             sql.insert('user', {'uid': uid, 'openid_qq': openid})
-            sql.insert('userinfo', {'uid': uid, 'nickname': user_info['nickname'], 'gender': user_info['gender']})
+            sql.insert('userinfo', {'uid': uid, 'nickname': user_info['nickname'], 'gender': user_info['gender'], "registration_time": datetime.now()})
             sql.insert('useravatar', {'uid': uid, 'avatar_path': ''})
         else:
             uid = user['uid']
@@ -224,7 +224,7 @@ async def on_mail_register():
             while sql.fetch_one('user', {'uid': uid}):
                 uid = str(uuid.uuid4())
             sql.insert('user', {'uid': uid, 'mail': mail, 'pwd': pwd})
-            sql.insert('userinfo', {'uid': uid})
+            sql.insert('userinfo', {'uid': uid, 'registration_time': datetime.now()})
             sql.insert('useravatar', {'uid': uid, 'avatar_path': ''})
             sql.delete('usermailverify', {'mail': mail})
 

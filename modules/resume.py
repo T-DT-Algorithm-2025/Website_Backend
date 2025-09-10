@@ -83,35 +83,31 @@ async def apply_recruit():
             return jsonify(success=False, error="附加文件格式不支持"), 400
     
     submit_id = str(uuid.uuid4())
-    try:
-        with SQL() as sql:
-            sql.insert('resume_submit', {'submit_id': submit_id, 'uid': uid, 'recruit_id': recruit_id, 'submit_time': submit_time, 'status': status})
-            sql.insert('resume_info', {
-                'submit_id': submit_id,
-                'first_choice': first_choice,
-                'second_choice': second_choice,
-                'self_intro': self_intro,
-                'skills': skills,
-                'projects': projects,
-                'awards': awards,
-                'grade_point': grade_point,
-                'grade_rank': grade_rank,
-                'additional_file_path': additional_file_path
-            })
-            sql.insert('resume_user_real_head_img', {
-                'submit_id': submit_id,
-                'real_head_img_path': real_head_img_path
-            })
-            
+    with SQL() as sql:
+        sql.insert('resume_submit', {'submit_id': submit_id, 'uid': uid, 'recruit_id': recruit_id, 'submit_time': submit_time, 'status': status})
+        sql.insert('resume_info', {
+            'submit_id': submit_id,
+            'first_choice': first_choice,
+            'second_choice': second_choice,
+            'self_intro': self_intro,
+            'skills': skills,
+            'projects': projects,
+            'awards': awards,
+            'grade_point': grade_point,
+            'grade_rank': grade_rank,
+            'additional_file_path': additional_file_path
+        })
+        sql.insert('resume_user_real_head_img', {
+            'submit_id': submit_id,
+            'real_head_img_path': real_head_img_path
+        })
+        
         recruit_info = sql.fetch_one('recruit', {'recruit_id': recruit_id})
         recruit_name = recruit_info.get('name', 'N/A') if recruit_info else 'N/A'
-        asyncio.create_task(send_application_submission_email(uid, recruit_name, first_choice))
-            
-        logger.info(f"User {uid} applied for recruit {recruit_id} with submit ID {submit_id}")
-        return jsonify(success=True, submit_id=submit_id)
-    except Exception as e:
-        logger.error(f"Error applying for recruit: {e}")
-        return jsonify(success=False, error="提交申请时发生错误"), 500
+    asyncio.create_task(send_application_submission_email(uid, recruit_name, first_choice))
+        
+    logger.info(f"User {uid} applied for recruit {recruit_id} with submit ID {submit_id}")
+    return jsonify(success=True, submit_id=submit_id)
 
 @flask_app.route('/resume/info/<submit_id>', methods=['GET'])
 async def get_resume_info(submit_id):
