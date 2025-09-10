@@ -40,6 +40,13 @@ async def on_login_redirect_set():
 
 @flask_app.route('/login/bundle/set', methods=['POST'])
 async def on_login_bundle_set():
+    """
+        设置启用登陆绑定
+        目前支持 'qq' 和 'mail'
+        如果设置为'qq', 则在已登录状态下, 在下次访问QQ登录回调时会绑定QQ账号
+        如果设置为'mail', 则在已登录状态下, 在下次访问邮箱注册回调时会绑定邮箱账号
+        如果为空或其他值, 则不启用绑定
+    """
     session.permanent = True
     session['login_bundle'] = request.json.get('bundle_name', None)
     if not session['login_bundle']:
