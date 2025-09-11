@@ -256,7 +256,7 @@ async def on_mail_register():
 async def on_mail_login():
     data = request.json
     if not data or 'mail' not in data or 'pwd' not in data:
-        return jsonify(success=False, error="未提供完整的登录信息")
+        return jsonify(success=False, error="未提供完整的登录信息"), 403
 
     mail = data['mail']
     pwd = data['pwd']
@@ -264,9 +264,9 @@ async def on_mail_login():
     with SQL() as sql:
         user = sql.fetch_one('user', {'mail': mail})
         if not user:
-            return jsonify(success=False, error="用户不存在")
+            return jsonify(success=False, error="用户不存在"), 404
         if not check_password_hash(user['pwd'], pwd):
-            return jsonify(success=False, error="邮箱或密码错误")
+            return jsonify(success=False, error="邮箱或密码错误"), 403
         uid = user['uid']
 
     session.permanent = True
