@@ -179,6 +179,25 @@ async def delete_recruit(recruit_id):
     
     try:
         with SQL() as sql:
+            resume_submissions = sql.fetch_all('resume_submit', {'recruit_id': recruit_id}, columns=['submit_id'])
+            if resume_submissions:
+                submit_ids = [item['submit_id'] for item in resume_submissions]
+                resume_infos = sql.fetch_all('resume_info', {'submit_id': submit_ids})
+                if resume_infos:
+                    for info in resume_infos:
+                        file_path = info['additional_file_path']
+                        if file_path and os.path.exists(file_path):
+                            os.remove(file_path)
+                sql.delete('resume_review', {'submit_id': submit_ids})
+                sql.delete('resume_submit', {'recruit_id': recruit_id})
+                sql.delete('resume_info', {'submit_id': submit_ids})
+                resume_real_heads = sql.fetch_all('resume_user_real_head_img', {'submit_id': submit_ids})
+                if resume_real_heads:
+                    for head in resume_real_heads:
+                        img_path = head['real_head_img_path']
+                        if img_path and os.path.exists(img_path):
+                            os.remove(img_path)
+                sql.delete('resume_user_real_head_img', {'submit_id': submit_ids})
             sql.delete('recruit', {'recruit_id': recruit_id})
         return jsonify(success=True, message="招聘信息删除成功")
     except Exception as e:
