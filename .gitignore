@@ -218,3 +218,4 @@ config/sms.json
 
 # User
 sync2server.sh
+from_server_sync.sh

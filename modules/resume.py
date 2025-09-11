@@ -43,7 +43,7 @@ async def apply_recruit():
             return jsonify(success=False, error="无效的招聘ID"), 400
         recruit_start_time = recruit_info.get('start_time', 0)
         recruit_end_time = recruit_info.get('end_time', 0)
-        current_time = datetime.datetime.now().timestamp()
+        current_time = datetime.datetime.now()
         if current_time < recruit_start_time or current_time > recruit_end_time:
             return jsonify(success=False, error="当前不在招聘时间范围内"), 400
     
@@ -78,24 +78,29 @@ async def apply_recruit():
     if not real_head_img.filename.lower().endswith(('.png', '.jpg', '.jpeg')):
         return jsonify(success=False, error="正面照格式不支持,仅支持png/jpg/jpeg"), 400
         
+    
+    submit_id = str(uuid.uuid4())
+    with SQL() as sql:
+        while sql.fetch_one('resume_submit', {'submit_id': submit_id}):
+            submit_id = str(uuid.uuid4())
+        
     os.makedirs('photos', exist_ok=True)
-    file_ext = os.path.splitext(real_head_img.filename)[1]
-    real_head_img_path = f'photos/{uid}_{recruit_id}_{int(submit_time.timestamp())}_real{file_ext}'
+    real_head_img_path = f'photos/{submit_id}_real.jpg'
     real_head_img.save(real_head_img_path)
 
     additional_file_path = ''
+    filename = ''
     additional_file = request.files.get('additional_file')
     if additional_file:
         filename = additional_file.filename
         if '.' in filename and filename.rsplit('.', 1)[1].lower() in global_config.get('allowed_content_extensions', []):
-            save_path = os.path.join('uploads', f"{uid}_{recruit_id}_{submit_time.strftime('%Y%m%d%H%M%S')}_{filename}")
+            save_path = os.path.join('uploads', f"{submit_id}")
             os.makedirs(os.path.dirname(save_path), exist_ok=True)
             additional_file.save(save_path)
             additional_file_path = save_path
         else:
             return jsonify(success=False, error="附加文件格式不支持"), 400
     
-    submit_id = str(uuid.uuid4())
     with SQL() as sql:
         sql.insert('resume_submit', {'submit_id': submit_id, 'uid': uid, 'recruit_id': recruit_id, 'submit_time': submit_time, 'status': status})
         sql.insert('resume_info', {
@@ -108,7 +113,8 @@ async def apply_recruit():
             'awards': awards,
             'grade_point': grade_point,
             'grade_rank': grade_rank,
-            'additional_file_path': additional_file_path
+            'additional_file_path': additional_file_path,
+            'additional_file_name': filename
         })
         sql.insert('resume_user_real_head_img', {
             'submit_id': submit_id,
@@ -148,7 +154,7 @@ async def get_resume_info(submit_id):
         status = submission.get('status', 0)
         # Bug修复: 表名 'status_name' 应为 'resume_status_names'
         if status == RESUME_PASSED_STATUS:
-            cnt_time = datetime.datetime.now().timestamp()
+            cnt_time = datetime.datetime.now()
             recruit_interview_setting = sql.fetch_one('recruit_interview_settings', {'recruit_id': submission.get('recruit_id')})
             if recruit_interview_setting:
                 if not (recruit_interview_setting.get('interview_start_time', 0) <= cnt_time <= recruit_interview_setting.get('interview_end_time', 0)):
@@ -184,10 +190,12 @@ async def list_user_resumes():
                 status = submission.get('status', 0)
                 submit_id = submission.get('submit_id')
                 if status == RESUME_PASSED_STATUS:
-                    cnt_time = datetime.datetime.now().timestamp()
+                    cnt_time = datetime.datetime.now()
                     recruit_interview_setting = sql.fetch_one('recruit_interview_settings', {'recruit_id': submission.get('recruit_id')})
                     if recruit_interview_setting:
-                        if not (recruit_interview_setting.get('interview_start_time', 0) <= cnt_time <= recruit_interview_setting.get('interview_end_time', 0)):
+                        start_time = recruit_interview_setting.get('interview_start_time', None)
+                        end_time = recruit_interview_setting.get('interview_end_time', None)
+                        if not start_time or not end_time or not (start_time <= cnt_time <= end_time):
                             submission['status'] = NO_INTERVIEW_STATUS
                             sql.update('resume_submit', {'status': NO_INTERVIEW_STATUS}, {'submit_id': submit_id})
                  # Bug修复: 表名 'status_name' 应为 'resume_status_names'
@@ -235,10 +243,11 @@ async def download_additional_file(submit_id):
                 return jsonify(success=False, error="未找到附加文件"), 404
 
             file_path = submission['additional_file_path']
+            file_name = submission['additional_file_name']
             if not os.path.isfile(file_path):
                 return jsonify(success=False, error="附加文件不存在或已丢失"), 404
 
-        return send_file(os.path.join(os.getcwd(), file_path), as_attachment=True)
+        return send_file(os.path.join(os.getcwd(), file_path), as_attachment=True, download_name=file_name)
     except Exception as e:
         logger.error(f"Error downloading additional file for submit_id {submit_id}: {e}")
         return jsonify(success=False, error="下载附加文件时发生错误"), 500
@@ -294,7 +303,7 @@ async def update_resume(submit_id):
             return jsonify(success=False, error="无效的招聘ID"), 400
         recruit_start_time = recruit_info.get('start_time', 0)
         recruit_end_time = recruit_info.get('end_time', 0)
-        current_time = datetime.datetime.now().timestamp()
+        current_time = datetime.datetime.now()
         if current_time < recruit_start_time or current_time > recruit_end_time:
             return jsonify(success=False, error="当前不在招聘时间范围内"), 400
 
@@ -302,12 +311,12 @@ async def update_resume(submit_id):
     data = request.form
     update_time = datetime.datetime.now()
     
-    first_choice = data.get('1st_choice', '')
+    first_choice = data.get('first_choice', '')
     if not first_choice:
         return jsonify(success=False, error="必须提供第一志愿")
     if first_choice not in available_positions:
         return jsonify(success=False, error="第一志愿选择无效")
-    second_choice = data.get('2nd_choice', '')
+    second_choice = data.get('second_choice', '')
     if second_choice and second_choice not in available_2st_positions:
         return jsonify(success=False, error="第二志愿选择无效")
     if first_choice == second_choice and second_choice != '':
@@ -326,22 +335,34 @@ async def update_resume(submit_id):
         return jsonify(success=False, error="获奖经历不能为空")
     grade_point = data.get('grade_point', '')
     grade_rank = data.get('grade_rank', '')
+    true_values = {'true', '1', 't', 'y', 'yes'}
     additional_file_change = data.get('additional_file_change', False)
+    if additional_file_change.lower() in true_values:
+        additional_file_change = True
+    else:
+        additional_file_change = False
     additional_file = request.files['additional_file'] if 'additional_file' in request.files else None
     additional_file_path = ''
+    filename = ''
+    print(additional_file_change)
     if additional_file_change:
         if additional_file:
             filename = additional_file.filename
             if '.' in filename and filename.rsplit('.', 1)[1].lower() in global_config.get('allowed_content_extensions', []):
-                save_path = os.path.join('uploads', f"{uid}_{submission['recruit_id']}_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}_{filename}")
+                save_path = os.path.join('uploads', f"{submit_id}")
                 os.makedirs(os.path.dirname(save_path), exist_ok=True)
                 additional_file.save(save_path)
                 additional_file_path = save_path
             else:
                 return jsonify(success=False, error="附加文件格式不支持")
         else:
+            print(additional_file_change)
             return jsonify(success=False, error="未提供新的附加文件")
     real_head_img_change = data.get('real_head_img_change', False)
+    if real_head_img_change.lower() in true_values:
+        real_head_img_change = True
+    else:
+        real_head_img_change = False
     real_head_img = request.files['real_head_img'] if 'real_head_img' in request.files else None
     if real_head_img_change:
         if not real_head_img:
@@ -350,13 +371,13 @@ async def update_resume(submit_id):
             return jsonify(success=False, error="正面照格式不支持,仅支持png/jpg/jpeg")
         if not os.path.exists('photos'):
             os.makedirs('photos')
-        real_head_img_path = f'photos/{uid}_{submission["recruit_id"]}_{int(datetime.datetime.now().timestamp())}_real.jpg'
+        real_head_img_path = f'photos/{submit_id}_real.jpg'
         real_head_img.save(real_head_img_path)
     try:
         with SQL() as sql:
             update_data = {
-                '1st_choice': first_choice,
-                '2nd_choice': second_choice,
+                'first_choice': first_choice,
+                'second_choice': second_choice,
                 'self_intro': self_intro,
                 'skills': skills,
                 'projects': projects,
@@ -364,21 +385,10 @@ async def update_resume(submit_id):
                 'grade_point': grade_point,
                 'grade_rank': grade_rank
             }
-            old_additional_file_path = sql.fetch_one('resume_info', {'submit_id': submit_id}).get('additional_file_path', '')
-            if additional_file_change and old_additional_file_path and os.path.isfile(old_additional_file_path):
-                try:
-                    os.remove(old_additional_file_path)
-                except Exception as e:
-                    logger.warning(f"Failed to remove old additional file {old_additional_file_path}: {e}")
             if additional_file_change and additional_file_path:
                 update_data['additional_file_path'] = additional_file_path
             sql.update('resume_info', update_data, {'submit_id': submit_id})
             old_real_head_img_path = sql.fetch_one('resume_user_real_head_img', {'submit_id': submit_id}).get('real_head_img_path', '')
-            if real_head_img_change and old_real_head_img_path and os.path.isfile(old_real_head_img_path):
-                try:
-                    os.remove(old_real_head_img_path)
-                except Exception as e:
-                    logger.warning(f"Failed to remove old real head image {old_real_head_img_path}: {e}")
             if real_head_img_change and real_head_img_path:
                 sql.update('resume_user_real_head_img', {'real_head_img_path': real_head_img_path}, {'submit_id': submit_id})
         logger.info(f"User {uid} updated resume {submit_id}")
@@ -417,7 +427,7 @@ async def delete_resume(submit_id):
                         return jsonify(success=False, error="无效的招聘ID"), 400
                     recruit_start_time = recruit_info.get('start_time', 0)
                     recruit_end_time = recruit_info.get('end_time', 0)
-                    current_time = datetime.datetime.now().timestamp()
+                    current_time = datetime.datetime.now()
                     if current_time < recruit_start_time or current_time > recruit_end_time:
                         return jsonify(success=False, error="当前不在招聘时间范围内，无法删除简历"), 400
             old_additional_file_path = sql.fetch_one('resume_info', {'submit_id': submit_id}).get('additional_file_path', '')

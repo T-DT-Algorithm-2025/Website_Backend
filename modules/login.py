@@ -7,8 +7,9 @@ import uuid
 import logging
 
 from flask import request, jsonify, session, redirect
+from werkzeug.security import generate_password_hash, check_password_hash
 
-from core.global_params import flask_app, oauth_config, redis_client, mailer
+from core.global_params import flask_app, oauth_config, redis_client, cMailer
 
 from utils import SQL
 
@@ -183,8 +184,14 @@ async def on_mail_verify_send():
         if elapsed < 60:
             return jsonify(success=False, error="请勿频繁发送验证码，60秒后再试")
 
+    bundle_name = data.get('bundle_name')
+    if bundle_name:
+        print(111)
+        session['login_bundle'] = bundle_name
+
     try:
-        await mailer.send(mail, "验证码 T-DT创新实验室邮件助手", f"同学您好,\n\t您的邮箱验证代码是: {verification_code}\n请在10分钟内使用该验证码完成验证。如非本人操作，请忽略此邮件。\n请勿回复此邮件。\n\n-- T-DT创新实验室", subtype='plain')
+        async with cMailer() as mailer:
+            await mailer.send(mail, "T-DT 验证码", f"同学您好,\n\t您的邮箱验证代码是: {verification_code}\n请在10分钟内使用该验证码完成验证。如非本人操作，请忽略此邮件。\n请勿回复此邮件。\n\n-- T-DT创新实验室", subtype='plain')
     except Exception as e:
         logger.error(f"发送邮件失败: {e}")
         return jsonify(success=False, error="发送邮件失败")
@@ -220,19 +227,20 @@ async def on_mail_register():
             return jsonify(success=False, error="验证码错误")
         if (datetime.now() - code_entry['code_sent_time']).total_seconds() > 600:
             return jsonify(success=False, error="验证码已过期，请重新获取")
-
+        
+        hashed_pwd = generate_password_hash(pwd)
         if 'uid' in session and session['uid'] and 'login_bundle' in session and session['login_bundle'] == 'mail':
             session.pop('login_bundle', None)
             # User is logged in, bind account
-            sql.update('user', {'mail': mail, 'pwd': pwd}, {'uid': session['uid']})
+            sql.update('user', {'mail': mail, 'pwd': hashed_pwd}, {'uid': session['uid']})
             uid = session['uid']
         else:
             uid = str(uuid.uuid4())
             while sql.fetch_one('user', {'uid': uid}):
                 uid = str(uuid.uuid4())
-            sql.insert('user', {'uid': uid, 'mail': mail, 'pwd': pwd})
+            sql.insert('user', {'uid': uid, 'mail': mail, 'pwd': hashed_pwd})
             sql.insert('userinfo', {'uid': uid, 'registration_time': datetime.now()})
-            sql.insert('useravatar', {'uid': uid, 'avatar_path': ''})
+            # sql.insert('useravatar', {'uid': uid, 'avatar_path': ''})
             sql.delete('usermailverify', {'mail': mail})
 
     session.permanent = True
@@ -255,7 +263,9 @@ async def on_mail_login():
 
     with SQL() as sql:
         user = sql.fetch_one('user', {'mail': mail})
-        if not user or user['pwd'] != pwd:
+        if not user:
+            return jsonify(success=False, error="用户不存在")
+        if not check_password_hash(user['pwd'], pwd):
             return jsonify(success=False, error="邮箱或密码错误")
         uid = user['uid']
 

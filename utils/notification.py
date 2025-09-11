@@ -1,5 +1,5 @@
 import asyncio
-from core.global_params import mailer, sms_client
+from core.global_params import cMailer, sms_client
 from utils.sql import SQL
 import logging
 
@@ -18,7 +18,8 @@ async def send_application_submission_email(uid, recruit_name, choice):
                 content = f"""同学您好,
                 <br><br>感谢您投递<b>{recruit_name}</b>的<b>{choice}</b>岗位。我们已经收到了您的简历，请耐心等待后续通知。
                 <br><br>-- T-DT创新实验室"""
-                await mailer.send(mail_to, subject, content, subtype='html')
+                async with cMailer() as mailer:
+                    await mailer.send(mail_to, subject, content, subtype='html')
                 logger.info(f"成功向 {mail_to} 发送简历投递成功邮件。")
     except Exception as e:
         logger.error(f"发送简历投递邮件给 {uid} 时出错: {e}")
@@ -39,7 +40,8 @@ async def send_interview_booking_email(uid, recruit_name, choice, interview_time
                 <br>面试地点: <b>{location}</b>
                 <br><br>请准时参加。
                 <br><br>-- T-DT创新实验室"""
-                await mailer.send(mail_to, subject, content, subtype='html')
+                async with cMailer() as mailer:
+                    await mailer.send(mail_to, subject, content, subtype='html')
                 logger.info(f"成功向 {mail_to} 发送面试预约成功邮件。")
     except Exception as e:
         logger.error(f"发送面试预约邮件给 {uid} 时出错: {e}")
@@ -74,7 +76,8 @@ async def send_status_change_notification(submit_id, new_status_name):
                 <br><br>您投递的<b>{recruit_name}</b>的<b>{choice}</b>岗位的状态已更新为: <b>{new_status_name}</b>。
                 <br><br>请登录我们的网站查看详情。
                 <br><br>-- T-DT创新实验室"""
-                await mailer.send(mail_to, subject, content, subtype='html')
+                async with cMailer() as mailer:
+                    await mailer.send(mail_to, subject, content, subtype='html')
                 logger.info(f"成功向 {mail_to} 发送状态变更邮件。")
 
             # 短信通知 (仅在特定状态下)

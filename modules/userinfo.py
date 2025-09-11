@@ -25,6 +25,10 @@ async def get_user_info():
         user_info['phone_number'] = user_phone.get('phone_number', '') if user_phone else ''
         user_info['is_verified'] = user_phone.get('is_verified', False) if user_phone else False
         
+        user_id = sql.fetch_one('user', {'uid': uid})
+        if user_id and user_id.get('mail', None):
+            user_info['mail'] = user_id.get('mail', None)
+        
         permission = False
         permission_info = sql.fetch_one('userpermission', {'uid': uid})
         if permission_info and is_admin_check(permission_info):
