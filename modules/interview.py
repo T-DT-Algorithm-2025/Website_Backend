@@ -6,7 +6,7 @@ from core.global_params import flask_app
 import logging
 import datetime
 
-from utils import SQL
+from utils import SQL, is_admin_check
 from utils.notification import send_interview_booking_email
 
 logger = logging.getLogger(__name__)
@@ -24,6 +24,12 @@ async def get_available_interview_rooms(recruit_id):
     uid = session.get('uid')
     if not uid:
         return jsonify(success=False, error="用户未登录"), 401
+    
+    is_admin = False
+    with SQL() as sql:
+        permission_info = sql.fetch_one('userpermission', {'uid': uid})
+        if is_admin_check(permission_info):
+            is_admin = True
 
     try:
         with SQL() as sql:
@@ -37,7 +43,7 @@ async def get_available_interview_rooms(recruit_id):
                 'resume_submit',
                 {'uid': uid, 'recruit_id': recruit_id, 'status': RESUME_PASSED_STATUS}
             )
-            if not submission:
+            if not submission and not is_admin:
                 return jsonify(success=True, data={"available": False, "reason": "未找到符合条件的投递"})
 
             # 3. 检查管理员是否设置了该招聘的面试预约时间
@@ -221,13 +227,19 @@ async def get_my_bookings(recruit_id):
                     ii.submit_id,
                     ii.interview_time,
                     ii.location,
-                    ri.first_choice as choice
+                    ri.first_choice as choice,
+                    rm.room_id,
+                    rm.room_name
                 FROM
                     interview_info AS ii
                 JOIN
                     resume_submit AS rs ON ii.submit_id = rs.submit_id
                 JOIN
                     resume_info AS ri ON ii.submit_id = ri.submit_id
+                JOIN
+                    interview_schedule AS isch ON ii.interview_id = isch.booked_interview_id
+                JOIN
+                    interview_room AS rm ON isch.room_id = rm.room_id
                 WHERE
                     ii.interviewee_uid = %s AND rs.recruit_id = %s
             """
@@ -239,7 +251,9 @@ async def get_my_bookings(recruit_id):
                     'submit_id': info['submit_id'],
                     'interview_time': info['interview_time'].strftime('%Y-%m-%d %H:%M:%S'),
                     'location': info['location'],
-                    'choice': info['choice']
+                    'choice': info['choice'],
+                    'room_id': info['room_id'],
+                    'room_name': info['room_name']
                 } for info in interviews
             ]
             return jsonify(success=True, data=response_data)
