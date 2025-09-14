@@ -54,7 +54,7 @@ class SQL:
     """
     # 用于验证SQL标识符（表/列名）的正则表达式
     # 只允许字母、数字和下划线，防止注入。
-    _VALID_IDENTIFIER_RE = re.compile(r'^[a-zA-Z0-9_]+$')
+    _VALID_IDENTIFIER_RE = re.compile(r'^[a-zA-Z0-9_-]+$')
 
     def __init__(self):
         self.logger = logging.getLogger(__name__)

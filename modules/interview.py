@@ -38,7 +38,7 @@ async def get_available_interview_rooms(recruit_id):
                 {'uid': uid, 'recruit_id': recruit_id, 'status': RESUME_PASSED_STATUS}
             )
             if not submission:
-                return jsonify(success=True, data={"available": False, "reason": "简历未通过"})
+                return jsonify(success=True, data={"available": False, "reason": "未找到符合条件的投递"})
 
             # 3. 检查管理员是否设置了该招聘的面试预约时间
             recruit_interview_settings = sql.fetch_one('recruit_interview_settings', {'recruit_id': recruit_id})
@@ -178,14 +178,14 @@ async def book_interview_schedule():
             # 5. 更新简历状态为“等待面试”
             sql.update('resume_submit', {'status': AWAITING_INTERVIEW_STATUS}, {'submit_id': submit_id})
 
-        # 事务成功提交后，发送邮件通知
-        recruit_info = sql.fetch_one('recruit', {'recruit_id': submission['recruit_id']})
-        recruit_name = recruit_info.get('name', 'N/A') if recruit_info else 'N/A'
-        resume_info = sql.fetch_one('resume_info', {'submit_id': submit_id})
-        choice = resume_info.get('first_choice', 'N/A') if resume_info else 'N/A'
-        interview_time_str = schedule['start_time'].strftime('%Y-%m-%d %H:%M:%S')
-        location = room_info.get('location', 'N/A')
-        asyncio.create_task(send_interview_booking_email(uid, recruit_name, choice, interview_time_str, location))
+            # 事务成功提交后，发送邮件通知
+            recruit_info = sql.fetch_one('recruit', {'recruit_id': submission['recruit_id']})
+            recruit_name = recruit_info.get('name', 'N/A') if recruit_info else 'N/A'
+            resume_info = sql.fetch_one('resume_info', {'submit_id': submit_id})
+            choice = resume_info.get('first_choice', 'N/A') if resume_info else 'N/A'
+            interview_time_str = schedule['start_time'].strftime('%Y-%m-%d %H:%M:%S')
+            location = room_info.get('location', 'N/A')
+        await send_interview_booking_email(uid, recruit_name, choice, interview_time_str, location)
         
         return jsonify(success=True, message="面试预约成功", interview_id=interview_id)
 

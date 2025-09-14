@@ -123,7 +123,7 @@ async def apply_recruit():
         
         recruit_info = sql.fetch_one('recruit', {'recruit_id': recruit_id})
         recruit_name = recruit_info.get('name', 'N/A') if recruit_info else 'N/A'
-    asyncio.create_task(send_application_submission_email(uid, recruit_name, first_choice))
+    await send_application_submission_email(uid, recruit_name, first_choice)
         
     logger.info(f"User {uid} applied for recruit {recruit_id} with submit ID {submit_id}")
     return jsonify(success=True, submit_id=submit_id)
@@ -157,7 +157,7 @@ async def get_resume_info(submit_id):
             cnt_time = datetime.datetime.now()
             recruit_interview_setting = sql.fetch_one('recruit_interview_settings', {'recruit_id': submission.get('recruit_id')})
             if recruit_interview_setting:
-                if not (recruit_interview_setting.get('interview_start_time', 0) <= cnt_time <= recruit_interview_setting.get('interview_end_time', 0)):
+                if recruit_interview_setting.get('book_end_time') and cnt_time > recruit_interview_setting.get('book_end_time'):
                     submission['status'] = NO_INTERVIEW_STATUS
                     sql.update('resume_submit', {'status': NO_INTERVIEW_STATUS}, {'submit_id': submit_id})
         
@@ -193,9 +193,7 @@ async def list_user_resumes():
                     cnt_time = datetime.datetime.now()
                     recruit_interview_setting = sql.fetch_one('recruit_interview_settings', {'recruit_id': submission.get('recruit_id')})
                     if recruit_interview_setting:
-                        start_time = recruit_interview_setting.get('interview_start_time', None)
-                        end_time = recruit_interview_setting.get('interview_end_time', None)
-                        if not start_time or not end_time or not (start_time <= cnt_time <= end_time):
+                        if recruit_interview_setting.get('book_end_time') and cnt_time > recruit_interview_setting.get('book_end_time'):
                             submission['status'] = NO_INTERVIEW_STATUS
                             sql.update('resume_submit', {'status': NO_INTERVIEW_STATUS}, {'submit_id': submit_id})
                  # Bug修复: 表名 'status_name' 应为 'resume_status_names'

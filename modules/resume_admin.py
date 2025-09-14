@@ -132,7 +132,7 @@ async def batch_update_resume_status():
             for submit_id in submit_ids:
                 sql.update('resume_submit', {'status': new_status}, {'submit_id': submit_id})
                 # 异步发送通知
-                asyncio.create_task(send_status_change_notification(submit_id, new_status_name))
+                await send_status_change_notification(submit_id, new_status_name)
         return jsonify(success=True, message="简历状态批量更新成功")
     except Exception as e:
         logger.error(f"批量更新简历状态时出错: {e}")
@@ -168,8 +168,9 @@ async def admin_review_resume(submit_id):
 
     try:
         review_id = str(uuid.uuid4())
-        while sql.fetch_one('resume_review', {'review_id': review_id}):
-            review_id = str(uuid.uuid4())
+        with SQL() as sql:
+            while sql.fetch_one('resume_review', {'review_id': review_id}):
+                review_id = str(uuid.uuid4())
         review_time = datetime.datetime.now()
         with SQL() as sql:
             insert_data = {
