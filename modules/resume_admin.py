@@ -30,13 +30,16 @@ async def get_all_resumes():
     if resume_list is not None:
         resume_info = []
         for item in resume_list:
-            resume_info.append({
-                'submit_id': item['submit_id'],
-                'uid': item['uid'],
-                'recruit_id': item['recruit_id'],
-                'submit_time': item['submit_time'].strftime('%Y-%m-%d %H:%M:%S'),
-                'status': item['status']
-            })
+            with SQL() as sql:
+                resume_info_submit = sql.fetch_one('resume_info', {'submit_id': item['submit_id']}, columns=['first_choice'])
+                resume_info.append({
+                    'submit_id': item['submit_id'],
+                    'uid': item['uid'],
+                    'recruit_id': item['recruit_id'],
+                    'submit_time': item['submit_time'].strftime('%Y-%m-%d %H:%M:%S'),
+                    'status': item['status'],
+                    'first_choice': resume_info_submit.get('first_choice', ''),
+                })
         return jsonify(success=True, data=resume_info)
     else:
         return jsonify(success=False, error="未找到简历信息")

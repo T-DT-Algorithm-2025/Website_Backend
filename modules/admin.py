@@ -23,20 +23,61 @@ async def get_all_users():
         if not is_admin_check(permission_info):
             return jsonify(success=False, error="权限不足"), 403
         
-        user_list = sql.fetch_all('userinfo', columns=['uid', 'name', 'email', 'registration_time'])
+        user_list = sql.fetch_all('userinfo')
     
     if user_list is not None:
         user_info = []
         for item in user_list:
-            user_info.append({
+            with SQL() as sql:
+                user_submission = sql.fetch_one('user', {'uid': item['uid']})
+            cnt_user_info = {
                 'uid': item['uid'],
-                'name': item['name'],
-                'email': item['email'],
-                'registration_time': item['registration_time'].strftime('%Y-%m-%d %H:%M:%S'),
-            })
+                'nickname': item['nickname'],
+                'realname': item['realname'],
+                'email': user_submission['mail'],
+            }
+            if item['registration_time']:
+                cnt_user_info['registration_time'] = item['registration_time'].strftime('%Y-%m-%d %H:%M:%S')
+            user_info.append(cnt_user_info)
         return jsonify(success=True, data=user_info)
     else:
         return jsonify(success=False, error="未找到用户信息")
+        
+@flask_app.route('/admin/user/info/get/<target_uid>', methods=['GET'])
+async def get_target_user_info(target_uid):
+    """
+    获取目标用户的信息
+    """
+    uid = session.get('uid')
+    if not uid:
+        return jsonify(success=False, error="用户未登录"), 401
+    with SQL() as sql:
+        permission_info = sql.fetch_one('userpermission', {'uid': uid})
+        if not is_admin_check(permission_info):
+            return jsonify(success=False, error="权限不足"), 403
+            
+    uid = target_uid
+        
+    with SQL() as sql:
+        user_info = sql.fetch_one('userinfo', {'uid': uid})
+        if not user_info:
+            return jsonify(success=False, error="未找到用户信息"), 404
+
+        user_phone = sql.fetch_one('userphone', {'uid': uid})
+        user_info['phone_number'] = user_phone.get('phone_number', '') if user_phone else ''
+        user_info['is_verified'] = user_phone.get('is_verified', False) if user_phone else False
+        
+        user_id = sql.fetch_one('user', {'uid': uid})
+        if user_id and user_id.get('mail', None):
+            user_info['mail'] = user_id.get('mail', None)
+        
+        permission = False
+        permission_info = sql.fetch_one('userpermission', {'uid': uid})
+        if permission_info and is_admin_check(permission_info):
+            permission = True
+        user_info['permission'] = permission
+    
+    return jsonify(success=True, data=user_info)
     
 @flask_app.route('/admin/user/batch/delete', methods=['POST'])
 async def batch_delete_users():
@@ -153,7 +194,13 @@ async def search_users():
     
     like_query = f"%{query}%"
     with SQL() as sql:
-        user_list = sql.fetch_all('userinfo', columns=['uid', 'name', 'email', 'registration_time'], where_clause="name LIKE %s OR email LIKE %s", params=(like_query, like_query))
+        query = """
+            SELECT `uid`, `realname`, `nickname`, `registration_time` 
+            FROM `userinfo` 
+            WHERE `realname` LIKE %s OR `nickname` LIKE %s
+        """
+        params = (like_query, like_query)
+        user_list = sql.execute_query(query, params)
     
     if user_list is not None:
         user_info = []

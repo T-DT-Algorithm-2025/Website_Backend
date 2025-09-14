@@ -16,6 +16,7 @@ async def get_user_info():
     if not uid:
         return jsonify(success=False, error="用户未登录"), 401
         
+        
     with SQL() as sql:
         user_info = sql.fetch_one('userinfo', {'uid': uid})
         if not user_info:

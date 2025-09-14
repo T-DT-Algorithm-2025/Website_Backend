@@ -408,9 +408,9 @@ async def delete_resume(submit_id):
     is_admin = False
     if 'uid' in session:
         with SQL() as sql:
-            permission_info = sql.fetch_one('userpermission', {'uid': session['uid']})
-            if permission_info and (permission_info.get('is_main_leader_admin') or permission_info.get('is_group_leader_admin')):
-                is_admin = True
+            permission_info = sql.fetch_one('userpermission', {'uid': uid})
+        if is_admin_check(permission_info):
+            is_admin = True
     try:
         with SQL() as sql:
             submission = sql.fetch_one("resume_submit", {'submit_id': submit_id})

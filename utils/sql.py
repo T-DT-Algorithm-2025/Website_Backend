@@ -77,6 +77,9 @@ class SQL:
                 self._conn.commit()
             self._conn.close()
 
+    def validate_indentifier_part(self, identifier: str) -> bool:
+        return self._VALID_IDENTIFIER_RE.match(identifier) is not None
+
     def _validate_identifiers(self, *identifiers: str):
         """
         【安全关键】验证SQL标识符（表名、列名）是否安全。
@@ -88,7 +91,7 @@ class SQL:
             if len(parts) > 2:
                 raise ValueError(f"Invalid SQL identifier format: {identifier}")
             for part in parts:
-                if not self._VALID_IDENTIFIER_RE.match(part):
+                if not self.validate_indentifier_part(part):
                     raise ValueError(f"Potentially unsafe SQL identifier detected: '{identifier}'")
 
     def _format_table_name(self, table: str) -> str:
