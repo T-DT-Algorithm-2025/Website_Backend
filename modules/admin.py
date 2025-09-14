@@ -202,15 +202,47 @@ async def search_users():
         params = (like_query, like_query)
         user_list = sql.execute_query(query, params)
     
+    user_info = []
     if user_list is not None:
-        user_info = []
         for item in user_list:
+            with SQL() as sql:
+                user_submission = sql.fetch_one('user', {'uid': item['uid']})
+                if user_submission and user_submission.get('mail', None):
+                    email = user_submission.get('mail', None)
+                else:
+                    email = ''
             user_info.append({
                 'uid': item['uid'],
-                'name': item['name'],
-                'email': item['email'],
-                'registration_time': item['registration_time'].strftime('%Y-%m-%d %H:%M:%S'),
+                'realname': item['realname'],
+                'nickname': item['nickname'],
+                'email': email,
+                'registration_time': item['registration_time'].strftime('%Y-%m-%d %H:%M:%S') if item['registration_time'] else '',
             })
-        return jsonify(success=True, data=user_info)
-    else:
+
+    with SQL() as sql:
+        query = """
+            SELECT `uid`, `mail` 
+            FROM `user` 
+            WHERE `mail` LIKE %s
+        """
+        params = (like_query,)
+        email_user_list = sql.execute_query(query, params)
+        if email_user_list is not None:
+            for item in email_user_list:
+                with SQL() as sql:
+                    user_info_record = sql.fetch_one('userinfo', {'uid': item['uid']})
+                if user_info_record:
+                    continue
+                user_info.append({
+                    'uid': item['uid'],
+                    'realname': user_info_record.get('realname', '') if user_info_record else '',
+                    'nickname': user_info_record.get('nickname', '') if user_info_record else '',
+                    'email': item['mail'],
+                    'registration_time': user_info_record.get('registration_time', '').strftime('%Y-%m-%d %H:%M:%S') if user_info_record and user_info_record.get('registration_time', None) else '',
+                })
+    
+    
+    if len(user_info) == 0:
         return jsonify(success=False, error="未找到匹配的用户信息")
+
+    return jsonify(success=True, data=user_info)
