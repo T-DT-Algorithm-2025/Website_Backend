@@ -306,7 +306,9 @@ async def list_interviews(recruit_id):
                     ii.interview_id, ii.submit_id, ii.interviewee_uid,
                     ui.realname, ui.nickname,
                     ii.interview_time, ii.location, ii.notes,
-                    ir.passed, ir.score, ir.comments AS interviewer_feedback, ir.reviewer_uid, ir.review_time
+                    ir.passed, ir.score, ir.comments AS interviewer_feedback, ir.reviewer_uid, ir.review_time,
+                    rm.room_id,
+                    rm.room_name
                 FROM
                     interview_info AS ii
                 JOIN
@@ -315,6 +317,10 @@ async def list_interviews(recruit_id):
                     userinfo AS ui ON ii.interviewee_uid = ui.uid
                 LEFT JOIN
                     interview_review AS ir ON ii.interview_id = ir.interview_id
+                LEFT JOIN
+                    interview_schedule AS isch ON ii.interview_id = isch.booked_interview_id
+                LEFT JOIN
+                    interview_room AS rm ON isch.room_id = rm.room_id
                 WHERE
                     rs.recruit_id = %s
                 ORDER BY
@@ -336,7 +342,9 @@ async def list_interviews(recruit_id):
                     'score': item.get('score'),
                     'interviewer_feedback': item.get('interviewer_feedback'),
                     'reviewer_uid': item.get('reviewer_uid'),
-                    'review_time': item['review_time'].strftime('%Y-%m-%d %H:%M:%S') if item.get('review_time') else None
+                    'review_time': item['review_time'].strftime('%Y-%m-%d %H:%M:%S') if item.get('review_time') else None,
+                    'room_id': item.get('room_id'),
+                    'room_name': item.get('room_name')
                 } for item in interviews
             ]
             return jsonify(success=True, data=interview_list)
