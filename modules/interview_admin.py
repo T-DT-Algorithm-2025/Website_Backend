@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from functools import wraps
 
 # 假设这些是您项目中的工具类
-from utils import SQL, is_admin_check
+from utils import SQL, is_admin_check, send_interview_cancellation_email
 
 logger = logging.getLogger(__name__)
 
@@ -261,6 +261,7 @@ async def list_interview_schedules(room_id):
                     schedule['start_time'] = schedule['start_time'].strftime('%Y-%m-%d %H:%M:%S')
                 if schedule.get('end_time'):
                     schedule['end_time'] = schedule['end_time'].strftime('%Y-%m-%d %H:%M:%S')
+            schedules.sort(key=lambda x: x['start_time'])
             return jsonify(success=True, data=schedules)
     except Exception as e:
         logger.error(f"获取面试时段列表时出错: {e}")
@@ -308,7 +309,8 @@ async def list_interviews(recruit_id):
                     ii.interview_time, ii.location, ii.notes,
                     ir.passed, ir.score, ir.comments AS interviewer_feedback, ir.reviewer_uid, ir.review_time,
                     rm.room_id,
-                    rm.room_name
+                    rm.room_name,
+                    ri.first_choice
                 FROM
                     interview_info AS ii
                 JOIN
@@ -321,6 +323,8 @@ async def list_interviews(recruit_id):
                     interview_schedule AS isch ON ii.interview_id = isch.booked_interview_id
                 LEFT JOIN
                     interview_room AS rm ON isch.room_id = rm.room_id
+                LEFT JOIN
+                    resume_info AS ri ON ii.submit_id = ri.submit_id
                 WHERE
                     rs.recruit_id = %s
                 ORDER BY
@@ -344,9 +348,11 @@ async def list_interviews(recruit_id):
                     'reviewer_uid': item.get('reviewer_uid'),
                     'review_time': item['review_time'].strftime('%Y-%m-%d %H:%M:%S') if item.get('review_time') else None,
                     'room_id': item.get('room_id'),
-                    'room_name': item.get('room_name')
+                    'room_name': item.get('room_name'),
+                    'first_choice': item.get('first_choice')
                 } for item in interviews
             ]
+            interview_list.sort(key=lambda x: x['interview_time'], reverse=True)
             return jsonify(success=True, data=interview_list)
     except Exception as e:
         logger.error(f"获取面试列表时出错: {e}")
@@ -415,6 +421,31 @@ async def cancel_interview(interview_id):
                 resume_submit = sql.fetch_one('resume_submit', {'submit_id': interview_info['submit_id']})
                 if resume_submit and resume_submit.get('status') == AWAITING_INTERVIEW_STATUS:
                     sql.update('resume_submit', {'status': RESUME_PASSED_STATUS}, {'submit_id': interview_info['submit_id']})
+
+            # 4. 发送取消通知邮件
+            try:
+                submit_id = interview_info.get('submit_id')
+                if submit_id:
+                    with SQL() as sql:
+                        resume_info = sql.fetch_one('resume_info', {'submit_id': submit_id})
+                        resume_submit = sql.fetch_one('resume_submit', {'submit_id': submit_id})
+                    first_choice = resume_info.get('first_choice') if resume_info else 'N/A'
+                    recruit_id = resume_submit.get('recruit_id') if resume_submit else None
+                    recruit_name = 'N/A'
+                    if recruit_id:
+                        with SQL() as sql:
+                            recruit_info = sql.fetch_one('recruit', {'recruit_id': recruit_id})
+                            if recruit_info:
+                                recruit_name = recruit_info.get('name', 'N/A')
+                    
+                await send_interview_cancellation_email(
+                    interview_info['interviewee_uid'],
+                    recruit_name,
+                    first_choice,
+                    interview_info['interview_time'].strftime('%Y-%m-%d %H:%M:%S') if interview_info.get('interview_time') else 'N/A'
+                )
+            except Exception as e:
+                logger.error(f"发送面试取消邮件时出错: {e}")
 
 
         return jsonify(success=True, message="面试已取消，关联的时间段（如有）已释放，用户可重新预约")

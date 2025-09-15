@@ -46,6 +46,39 @@ async def send_interview_booking_email(uid, recruit_name, choice, interview_time
     except Exception as e:
         logger.error(f"发送面试预约邮件给 {uid} 时出错: {e}")
 
+async def send_interview_cancellation_email(uid, recruit_name, choice, interview_time):
+    """
+    发送面试取消邮件通知
+    """
+    try:
+        with SQL() as sql:
+            user_info = sql.fetch_one('user', {'uid': uid})
+            phone_info = sql.fetch_one('userphone', {'uid': uid})
+            user_info_info = sql.fetch_one('userinfo', {'uid': uid})
+        realname = user_info_info.get('realname', '') if user_info_info else ''
+        # 邮件通知
+        if user_info and user_info.get('mail'):
+            mail_to = user_info['mail']
+            subject = "【T-DT创新实验室】面试取消通知"
+            content = f"""亲爱的{realname}同学您好,
+            <br><br>您预约的<b>{recruit_name}</b>的<b>{choice}</b>岗位的面试已被取消。
+            <br><b>请您及时登录系统重新预约。</b>
+            <br>原定面试时间: <b>{interview_time}</b>
+            <br><br>如有疑问，请联系相关负责人。
+            <br><br>-- T-DT创新实验室"""
+            async with cMailer() as mailer:
+                await mailer.send(mail_to, subject, content, subtype='html')
+            logger.info(f"成功向 {mail_to} 发送面试取消邮件。")
+
+        # 短信通知
+        if phone_info and phone_info.get('phone_number') and sms_client:
+            phone_number = phone_info['phone_number']
+            sms_content = f"【TDT创新实验室】亲爱的{realname}同学您好，您预约的{recruit_name}的{choice}岗位的面试已被取消，请您及时登录系统重新预约。"
+            sms_client.send(phone_number, sms_content)
+            logger.info(f"已向 {phone_number} 发送面试取消短信。")
+    except Exception as e:
+        logger.error(f"发送面试取消邮件给 {uid} 时出错: {e}")
+
 
 async def send_status_change_notification(submit_id, new_status_name):
     """

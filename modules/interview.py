@@ -125,6 +125,7 @@ async def get_available_schedules(submit_id):
                         "room_name": room_details.get('room_name', 'N/A'),
                         "location": room_details.get('location', 'N/A')
                     })
+            available_slots.sort(key=lambda x: x['start_time'])
             return jsonify(success=True, data=available_slots)
     except Exception as e:
         logger.error(f"获取可用面试安排时出错: {e}")
@@ -206,6 +207,49 @@ async def book_interview_schedule():
             logger.error(f"尝试回滚面试预约状态失败: {rollback_e}")
         
         return jsonify(success=False, error="服务器内部错误，预约失败"), 500
+    
+@flask_app.route('/interview/schedule/cancel', methods=['POST'])
+async def cancel_interview_booking():
+    """
+    用户取消已预约的面试。
+    """
+    uid = session.get('uid')
+    if not uid:
+        return jsonify(success=False, error="用户未登录"), 401
+    
+    data = request.json
+    interview_id = data.get('interview_id')
+
+    if not interview_id:
+        return jsonify(success=False, error="缺少 interview_id"), 400
+
+    try:
+        with SQL() as sql: # 整个 `with` 块是一个事务
+            # 1. 验证面试信息是否存在且属于当前用户
+            interview_info = sql.fetch_one('interview_info', {'interview_id': interview_id, 'interviewee_uid': uid})
+            if not interview_info:
+                return jsonify(success=False, error="找不到该面试信息或无权限取消"), 404
+
+            submit_id = interview_info['submit_id']
+            
+            resume_submit = sql.fetch_one('resume_submit', {'submit_id': interview_info['submit_id']})
+            if not resume_submit:
+                return jsonify(success=False, error="找不到对应的投递信息"), 404
+            if resume_submit['status'] != AWAITING_INTERVIEW_STATUS:
+                return jsonify(success=False, error="当前简历状态不允许取消面试"), 403
+
+            # 2. 删除面试信息
+            sql.delete('interview_info', {'interview_id': interview_id})
+
+            # 3. 释放对应的时间段
+            sql.update('interview_schedule', {'already_booked': False, 'booked_interview_id': None}, {'booked_interview_id': interview_id})
+
+            # 4. 将简历状态回退为“简历通过”，允许用户重新预约
+            sql.update('resume_submit', {'status': RESUME_PASSED_STATUS}, {'submit_id': submit_id})
+        return jsonify(success=True, message="面试取消成功")
+    except Exception as e:
+        logger.error(f"取消面试预约时出错: {e}")
+        return jsonify(success=False, error="服务器内部错误，取消失败"), 500
 
 @flask_app.route('/interview/my_bookings/<recruit_id>', methods=['GET'])
 async def get_my_bookings(recruit_id):
