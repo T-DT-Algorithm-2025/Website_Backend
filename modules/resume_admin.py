@@ -206,7 +206,7 @@ async def get_admin_review(submit_id):
 
     try:
         with SQL() as sql:
-            review_info = sql.fetch_one('resume_review', {'submit_id': submit_id})
+            review_info = sql.fetch_all('resume_review', {'submit_id': submit_id})
             if review_info:
                 return jsonify(success=True, data=review_info)
             else:
