@@ -30,11 +30,15 @@ async def get_all_users():
         for item in user_list:
             with SQL() as sql:
                 user_submission = sql.fetch_one('user', {'uid': item['uid']})
+                permission_info = sql.fetch_one('userpermission', {'uid': item['uid']})
             cnt_user_info = {
                 'uid': item['uid'],
                 'nickname': item['nickname'],
                 'realname': item['realname'],
                 'email': user_submission['mail'],
+                'is_main_leader_admin': permission_info['is_main_leader_admin'] if permission_info else False,
+                'is_group_leader_admin': permission_info['is_group_leader_admin'] if permission_info else False,
+                'is_member_admin': permission_info['is_member_admin'] if permission_info else False,
             }
             if item['registration_time']:
                 cnt_user_info['registration_time'] = item['registration_time'].strftime('%Y-%m-%d %H:%M:%S')

@@ -32,6 +32,7 @@ async def get_all_resumes():
         for item in resume_list:
             with SQL() as sql:
                 resume_info_submit = sql.fetch_one('resume_info', {'submit_id': item['submit_id']}, columns=['first_choice'])
+                user_info_submission = sql.fetch_one('userinfo', {'uid': item['uid']})
                 resume_info.append({
                     'submit_id': item['submit_id'],
                     'uid': item['uid'],
@@ -39,6 +40,8 @@ async def get_all_resumes():
                     'submit_time': item['submit_time'].strftime('%Y-%m-%d %H:%M:%S'),
                     'status': item['status'],
                     'first_choice': resume_info_submit.get('first_choice', ''),
+                    'realname': user_info_submission.get('realname', '') if user_info_submission else '',
+                    'nickname': user_info_submission.get('nickname', '') if user_info_submission else ''
                 })
         return jsonify(success=True, data=resume_info)
     else:
